@@ -22,7 +22,7 @@ def check_data(df):
     df_with_anomalies = df.copy()
     
     # Vérifier la présence des colonnes requises
-    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude']
+    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune']
     if not all(col in df_with_anomalies.columns for col in required_columns):
         missing_columns = [col for col in required_columns if col not in df_with_anomalies.columns]
         st.error(f"Votre fichier ne contient pas toutes les colonnes requises. Colonnes manquantes : {', '.join(missing_columns)}")
@@ -46,7 +46,15 @@ def check_data(df):
     # 5. Contrôle des valeurs égales à zéro pour la 'Longitude'
     df_with_anomalies.loc[df_with_anomalies['Longitude'] == 0, 'Anomalie'] += 'Longitude égale à zéro; '
 
-    # 6. Contrôle de la longueur des caractères pour la marque KAMSTRUP
+    # --- NOUVEAUX CONTRÔLES ---
+    # 6. Contrôle de la plage de la Latitude
+    df_with_anomalies.loc[~df_with_anomalies['Latitude'].between(-90, 90, inclusive='both'), 'Anomalie'] += "Latitude invalide (hors de la plage [-90, 90]); "
+    
+    # 7. Contrôle de la plage de la Longitude
+    df_with_anomalies.loc[~df_with_anomalies['Longitude'].between(-180, 180, inclusive='both'), 'Anomalie'] += "Longitude invalide (hors de la plage [-180, 180]); "
+    # -------------------------
+
+    # 8. Contrôle de la longueur des caractères pour la marque KAMSTRUP
     kamstrup_condition = (df_with_anomalies['Marque'] == 'KAMSTRUP') & (df_with_anomalies['Numéro de compteur'].astype(str).str.len() != 8)
     df_with_anomalies.loc[kamstrup_condition, 'Anomalie'] += "Marque KAMSTRUP : 'Numéro de compteur' n'a pas 8 caractères; "
 
@@ -66,7 +74,6 @@ uploaded_file = st.file_uploader("Choisissez un fichier", type=['csv', 'xlsx'])
 if uploaded_file is not None:
     st.success("Fichier chargé avec succès !")
 
-    # Charger le fichier en DataFrame et détecter le délimiteur pour les CSV
     try:
         file_extension = uploaded_file.name.split('.')[-1]
         if file_extension == 'csv':
@@ -84,6 +91,14 @@ if uploaded_file is not None:
     st.subheader("Aperçu des 5 premières lignes")
     st.dataframe(df.head())
 
+    if st.button("Extraire les communes uniques"):
+        if 'Commune' in df.columns:
+            communes_uniques = df['Commune'].dropna().unique()
+            st.write("Communes uniques trouvées dans le fichier :")
+            st.write(communes_uniques)
+        else:
+            st.error("La colonne 'Commune' est introuvable. Veuillez vérifier que le nom de la colonne est correct.")
+
     if st.button("Lancer les contrôles"):
         st.write("Contrôles en cours...")
         anomalies_df = check_data(df)
@@ -92,7 +107,6 @@ if uploaded_file is not None:
             st.error("Anomalies détectées !")
             st.dataframe(anomalies_df)
             
-            # Gestion du téléchargement pour les fichiers CSV et XLSX
             if file_extension == 'csv':
                 csv_file = anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
                 st.download_button(
@@ -102,7 +116,6 @@ if uploaded_file is not None:
                     mime='text/csv',
                 )
             elif file_extension == 'xlsx':
-                # Créer un objet io.BytesIO pour stocker le fichier Excel en mémoire
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                     anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
