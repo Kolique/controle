@@ -22,7 +22,7 @@ def check_data(df):
     df_with_anomalies = df.copy()
     
     # Vérifier la présence des colonnes requises
-    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur']
+    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude']
     if not all(col in df_with_anomalies.columns for col in required_columns):
         missing_columns = [col for col in required_columns if col not in df_with_anomalies.columns]
         st.error(f"Votre fichier ne contient pas toutes les colonnes requises. Colonnes manquantes : {', '.join(missing_columns)}")
@@ -40,7 +40,13 @@ def check_data(df):
     # 3. Contrôle des cases vides dans la colonne 'Numéro de tête'
     df_with_anomalies.loc[df_with_anomalies['Numéro de tête'].isnull(), 'Anomalie'] += 'Colonne "Numéro de tête" vide; '
 
-    # 4. Contrôle de la longueur des caractères pour la marque KAMSTRUP
+    # 4. Contrôle des valeurs égales à zéro pour la 'Latitude'
+    df_with_anomalies.loc[df_with_anomalies['Latitude'] == 0, 'Anomalie'] += 'Latitude égale à zéro; '
+    
+    # 5. Contrôle des valeurs égales à zéro pour la 'Longitude'
+    df_with_anomalies.loc[df_with_anomalies['Longitude'] == 0, 'Anomalie'] += 'Longitude égale à zéro; '
+
+    # 6. Contrôle de la longueur des caractères pour la marque KAMSTRUP
     kamstrup_condition = (df_with_anomalies['Marque'] == 'KAMSTRUP') & (df_with_anomalies['Numéro de compteur'].astype(str).str.len() != 8)
     df_with_anomalies.loc[kamstrup_condition, 'Anomalie'] += "Marque KAMSTRUP : 'Numéro de compteur' n'a pas 8 caractères; "
 
