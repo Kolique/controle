@@ -12,15 +12,16 @@ def check_data(df):
     df_copy = df.copy()
 
     # Vérifier la présence des colonnes requises
-    required_columns = ['Protocole', 'Marque', 'Numéro de tête', 'Numéro de compteur']
+    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur']
     if not all(col in df_copy.columns for col in required_columns):
-        st.error("Votre fichier ne contient pas toutes les colonnes requises : Protocole, Marque, Numéro de tête, Numéro de compteur.")
+        missing_columns = [col for col in required_columns if col not in df_copy.columns]
+        st.error(f"Votre fichier ne contient pas toutes les colonnes requises. Colonnes manquantes : {', '.join(missing_columns)}")
         st.stop()
         
-    # 1. Contrôle des cases vides dans la colonne 'Protocole'
-    empty_b = df_copy[df_copy['Protocole'].isnull()]
+    # 1. Contrôle des cases vides dans la colonne 'Protocole Radio'
+    empty_b = df_copy[df_copy['Protocole Radio'].isnull()]
     if not empty_b.empty:
-        empty_b['Anomalie'] = "Colonne 'Protocole' vide"
+        empty_b['Anomalie'] = "Colonne 'Protocole Radio' vide"
         anomalies.append(empty_b)
 
     # 2. Contrôle des cases vides dans la colonne 'Marque'
