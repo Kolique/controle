@@ -63,7 +63,6 @@ if uploaded_file is not None:
     # Charger le fichier en DataFrame et détecter le délimiteur pour les CSV
     try:
         file_extension = uploaded_file.name.split('.')[-1]
-        delimiter = ','
         if file_extension == 'csv':
             delimiter = get_csv_delimiter(uploaded_file)
             df = pd.read_csv(uploaded_file, sep=delimiter)
@@ -87,17 +86,27 @@ if uploaded_file is not None:
             st.error("Anomalies détectées !")
             st.dataframe(anomalies_df)
             
-            # Utiliser le même délimiteur pour le fichier de sortie
+            # Gestion du téléchargement pour les fichiers CSV et XLSX
             if file_extension == 'csv':
                 csv_file = anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
-            else: # Pour les fichiers Excel, pas de délimiteur, on peut juste utiliser un CSV par défaut
-                csv_file = anomalies_df.to_csv(index=False).encode('utf-8')
-            
-            st.download_button(
-                label="Télécharger les anomalies",
-                data=csv_file,
-                file_name=f'anomalies_radioreleve.{file_extension}', # Nom du fichier avec la bonne extension
-                mime='text/csv' if file_extension == 'csv' else 'application/vnd.ms-excel',
-            )
+                st.download_button(
+                    label="Télécharger les anomalies en CSV",
+                    data=csv_file,
+                    file_name='anomalies_radioreleve.csv',
+                    mime='text/csv',
+                )
+            elif file_extension == 'xlsx':
+                # Créer un objet io.BytesIO pour stocker le fichier Excel en mémoire
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
+                excel_buffer.seek(0)
+
+                st.download_button(
+                    label="Télécharger les anomalies en Excel",
+                    data=excel_buffer,
+                    file_name='anomalies_radioreleve.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                )
         else:
             st.success("Aucune anomalie détectée ! Les données sont conformes.")
