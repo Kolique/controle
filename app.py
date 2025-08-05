@@ -30,7 +30,6 @@ def check_data(df):
     
     df_with_anomalies['Anomalie'] = ''
 
-    # Nettoyage des colonnes avant les contrôles
     for col in ['Marque', 'Numéro de compteur', 'Année de fabrication', 'Diametre', 'Protocole Radio']:
         if pd.api.types.is_string_dtype(df_with_anomalies[col]):
             df_with_anomalies[col] = df_with_anomalies[col].str.strip()
@@ -90,7 +89,8 @@ def check_data(df):
     sappel_to_check = df_with_anomalies.loc[is_sappel].copy()
     sappel_to_check['Numéro de compteur'] = sappel_to_check['Numéro de compteur'].astype(str)
     
-    has_valid_length = sappel_to_check['Numéro de compteur'].str.len() >= 4
+    # Correction de la longueur minimale pour la vérification de la 5e lettre
+    has_valid_length = sappel_to_check['Numéro de compteur'].str.len() >= 5
     sappel_to_check = sappel_to_check.loc[has_valid_length].copy()
     
     first_letter_ok = (
@@ -102,7 +102,8 @@ def check_data(df):
     year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str)
     
     def check_diameter(row):
-        compteur_char = row['Numéro de compteur'][3].upper()
+        # Correction : On prend maintenant la 5e lettre (index 4)
+        compteur_char = row['Numéro de compteur'][4].upper()
         diametre_val = pd.to_numeric(row['Diametre'], errors='coerce')
         
         expected_diametres = diameter_map.get(compteur_char)
