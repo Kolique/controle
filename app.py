@@ -83,42 +83,47 @@ def check_data(df):
     condition10b = (is_sappel) & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
     df_with_anomalies.loc[condition10b, 'Anomalie'] += "Sappel: Année > 22 sans Protocole Radio 'OMS' / "
 
-    # --- RÈGLE FP2E (MISE À JOUR) ---
-    diameter_map = {'A': 15, 'U': 15, 'Y': 15, 'Z': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
+        # --- RÈGLE FP2E (CORRIGÉE) ---
+    diameter_map = {
+        'A': 15, 'U': 15, 'Y': 15, 'Z': 15,
+        'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50,
+        'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150
+    }
 
-    sappel_to_check = df_with_anomalies.loc[is_sappel].copy()
-    sappel_to_check['Numéro de compteur'] = sappel_to_check['Numéro de compteur'].astype(str)
-    
-    first_letter_ok = (
-        (sappel_to_check['Marque'] == 'SAPPEL (C)') & (sappel_to_check['Numéro de compteur'].str[0] == 'C')
-    ) | (
-        (sappel_to_check['Marque'] == 'SAPPEL (H)') & (sappel_to_check['Numéro de compteur'].str[0] == 'H')
-    )
+    def is_fp2e_valid(row):
+        numero = str(row['Numéro de compteur']).upper()
+        marque = row['Marque']
+        annee = str(row['Année de fabrication'])[-2:]
+        diametre = pd.to_numeric(row['Diametre'], errors='coerce')
 
-    year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str).str[-2:]
-    
-    def check_diameter(row):
-        # La condition de sécurité est maintenant intégrée ici
-        if len(str(row['Numéro de compteur'])) < 5:
+        if not isinstance(numero, str) or len(numero) < 5:
             return False
-            
-        compteur_char = row['Numéro de compteur'][4].upper()
-        diametre_val = pd.to_numeric(row['Diametre'], errors='coerce')
-        
-        expected_diametres = diameter_map.get(compteur_char)
-        if pd.isna(diametre_val) or expected_diametres is None:
+
+        # 1. Première lettre selon la marque
+        if marque == 'SAPPEL (C)' and not numero.startswith('C'):
             return False
-        
-        if isinstance(expected_diametres, list):
-            return diametre_val in expected_diametres
-        else:
-            return diametre_val == expected_diametres
+        if marque == 'SAPPEL (H)' and not numero.startswith('H'):
+            return False
 
-    diameter_ok = sappel_to_check.apply(check_diameter, axis=1)
+        # 2. Deuxième et troisième chiffres = année
+        if len(numero) < 3 or not numero[1:3].isdigit() or numero[1:3] != annee:
+            return False
 
-    fp2e_not_respected = sappel_to_check.index[~first_letter_ok | ~year_ok | ~diameter_ok]
-    
-    df_with_anomalies.loc[fp2e_not_respected, 'Anomalie'] += "Sappel: Non conforme à la loi FP2E / "
+        # 3. Cinquième caractère = lettre correspondant au diamètre
+        if len(numero) < 5:
+            return False
+        lettre_diametre = numero[4]
+        correspondance = diameter_map.get(lettre_diametre)
+        if correspondance is None or pd.isna(diametre):
+            return False
+        if isinstance(correspondance, list):
+            return diametre in correspondance
+        return diametre == correspondance
+
+    # Appliquer la règle uniquement aux SAPPEL
+    fp2e_check = df_with_anomalies[is_sappel].apply(is_fp2e_valid, axis=1)
+    df_with_anomalies.loc[is_sappel & ~fp2e_check, 'Anomalie'] += "Sappel: Non conforme à la loi FP2E / "
+
     
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     
