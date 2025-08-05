@@ -3,6 +3,8 @@ import pandas as pd
 import io
 import csv
 
+# @st.cache_data est conservé pour optimiser le temps de traitement initial
+@st.cache_data
 def get_csv_delimiter(file):
     """Détecte le délimiteur d'un fichier CSV."""
     try:
@@ -16,6 +18,9 @@ def get_csv_delimiter(file):
 
 @st.cache_data
 def check_data(df):
+    """
+    Effectue tous les contrôles sur le DataFrame et retourne un DataFrame avec les anomalies.
+    """
     df_with_anomalies = df.copy()
     
     required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre']
@@ -77,20 +82,31 @@ def check_data(df):
     anomalies_df = df_with_anomalies[df_with_anomalies['Anomalie'] != '']
     return anomalies_df
 
+# --- Interface Streamlit ---
 st.title("Contrôle des données de Radiorelève")
 st.markdown("Veuillez téléverser votre fichier pour lancer les contrôles.")
 
 uploaded_file = st.file_uploader("Choisissez un fichier", type=['csv', 'xlsx'])
 
+# Initialisation de l'état de la session
+if 'anomalies_df' not in st.session_state:
+    st.session_state['anomalies_df'] = pd.DataFrame()
+if 'df' not in st.session_state:
+    st.session_state['df'] = pd.DataFrame()
+if 'file_extension' not in st.session_state:
+    st.session_state['file_extension'] = None
+
 if uploaded_file is not None:
     st.success("Fichier chargé avec succès !")
+
     try:
         file_extension = uploaded_file.name.split('.')[-1]
+        st.session_state['file_extension'] = file_extension
         if file_extension == 'csv':
             delimiter = get_csv_delimiter(uploaded_file)
-            df = pd.read_csv(uploaded_file, sep=delimiter)
+            st.session_state['df'] = pd.read_csv(uploaded_file, sep=delimiter)
         elif file_extension == 'xlsx':
-            df = pd.read_excel(uploaded_file)
+            st.session_state['df'] = pd.read_excel(uploaded_file)
         else:
             st.error("Format de fichier non pris en charge. Veuillez utiliser un fichier .csv ou .xlsx.")
             st.stop()
@@ -99,78 +115,80 @@ if uploaded_file is not None:
         st.stop()
 
     st.subheader("Aperçu des 5 premières lignes")
-    st.dataframe(df.head())
-
+    st.dataframe(st.session_state['df'].head())
+    
+    # Bouton pour extraire les communes
     if st.button("Extraire les communes uniques"):
-        if 'Commune' in df.columns:
-            communes_uniques = df['Commune'].dropna().unique()
+        if 'Commune' in st.session_state['df'].columns:
+            communes_uniques = st.session_state['df']['Commune'].dropna().unique()
             st.write("Communes uniques trouvées dans le fichier :")
             st.write(communes_uniques)
         else:
             st.error("La colonne 'Commune' est introuvable. Veuillez vérifier que le nom de la colonne est correct.")
 
+    # Bouton principal pour lancer l'analyse
     if st.button("Lancer les contrôles"):
         with st.spinner('Contrôles en cours...'):
-            anomalies_df = check_data(df)
+            st.session_state['anomalies_df'] = check_data(st.session_state['df'])
 
-        if not anomalies_df.empty:
-            st.error("Anomalies détectées !")
-            
-            # --- SYNTHÈSE DES ANOMALIES (inchangée) ---
-            st.subheader("Résumé des anomalies")
-            anomaly_counts = anomalies_df['Anomalie'].str.split(' / ').explode().value_counts().rename_axis('Type d\'anomalie').reset_index(name='Nombre')
-            st.dataframe(anomaly_counts)
-            
-            # --- NOUVELLE INTERFACE DE FILTRE ---
-            st.subheader("Filtrer les anomalies")
-            all_anomaly_types = anomaly_counts['Type d\'anomalie'].tolist()
-            
-            # Utilisation de l'état de session pour gérer la sélection
-            if 'selected_anomalies' not in st.session_state:
-                st.session_state['selected_anomalies'] = all_anomaly_types
-
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Sélectionner tout"):
-                    st.session_state['selected_anomalies'] = all_anomaly_types
-            with col2:
-                if st.button("Désélectionner tout"):
-                    st.session_state['selected_anomalies'] = []
-
-            selected_anomalies = []
-            for atype in all_anomaly_types:
-                if st.checkbox(atype, value=(atype in st.session_state['selected_anomalies']), key=atype):
-                    selected_anomalies.append(atype)
-
-            if not selected_anomalies:
-                st.warning("Aucun filtre sélectionné. Le tableau des anomalies est vide.")
-                filtered_anomalies_df = pd.DataFrame()
-            else:
-                filtered_anomalies_df = anomalies_df[anomalies_df['Anomalie'].apply(lambda x: any(atype in x for atype in selected_anomalies))]
-
-            st.dataframe(filtered_anomalies_df)
-            
-            # --- BOUTON DE TÉLÉCHARGEMENT ---
-            if not filtered_anomalies_df.empty:
-                if file_extension == 'csv':
-                    csv_file = filtered_anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
-                    st.download_button(
-                        label="Télécharger les anomalies filtrées en CSV",
-                        data=csv_file,
-                        file_name='anomalies_radioreleve_filtrees.csv',
-                        mime='text/csv',
-                    )
-                elif file_extension == 'xlsx':
-                    excel_buffer = io.BytesIO()
-                    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                        filtered_anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
-                    excel_buffer.seek(0)
+# Section pour afficher les résultats (découplée du bouton de contrôle)
+if not st.session_state['anomalies_df'].empty:
+    st.error("Anomalies détectées !")
     
-                    st.download_button(
-                        label="Télécharger les anomalies filtrées en Excel",
-                        data=excel_buffer,
-                        file_name='anomalies_radioreleve_filtrees.xlsx',
-                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    )
-        else:
-            st.success("Aucune anomalie détectée ! Les données sont conformes.")
+    st.subheader("Résumé des anomalies")
+    anomaly_counts = st.session_state['anomalies_df']['Anomalie'].str.split(' / ').explode().value_counts().rename_axis('Type d\'anomalie').reset_index(name='Nombre')
+    st.dataframe(anomaly_counts)
+    
+    st.subheader("Filtrer les anomalies")
+    all_anomaly_types = anomaly_counts['Type d\'anomalie'].tolist()
+    
+    if 'selected_anomalies' not in st.session_state:
+        st.session_state['selected_anomalies'] = all_anomaly_types
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Sélectionner tout", key='select_all_btn'):
+            st.session_state['selected_anomalies'] = all_anomaly_types
+    with col2:
+        if st.button("Désélectionner tout", key='deselect_all_btn'):
+            st.session_state['selected_anomalies'] = []
+
+    selected_anomalies = []
+    # Création des checkboxes
+    for atype in all_anomaly_types:
+        if st.checkbox(atype, value=(atype in st.session_state['selected_anomalies']), key=atype):
+            selected_anomalies.append(atype)
+
+    if not selected_anomalies:
+        st.warning("Aucun filtre sélectionné. Le tableau des anomalies est vide.")
+        filtered_anomalies_df = pd.DataFrame()
+    else:
+        filtered_anomalies_df = st.session_state['anomalies_df'][st.session_state['anomalies_df']['Anomalie'].apply(lambda x: any(atype in x for atype in selected_anomalies))]
+
+    st.dataframe(filtered_anomalies_df)
+    
+    if not filtered_anomalies_df.empty:
+        if st.session_state['file_extension'] == 'csv':
+            delimiter = get_csv_delimiter(uploaded_file)
+            csv_file = filtered_anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
+            st.download_button(
+                label="Télécharger les anomalies filtrées en CSV",
+                data=csv_file,
+                file_name='anomalies_radioreleve_filtrees.csv',
+                mime='text/csv',
+            )
+        elif st.session_state['file_extension'] == 'xlsx':
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                filtered_anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
+            excel_buffer.seek(0)
+
+            st.download_button(
+                label="Télécharger les anomalies filtrées en Excel",
+                data=excel_buffer,
+                file_name='anomalies_radioreleve_filtrees.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+else:
+    if 'df' in st.session_state and not st.session_state['df'].empty:
+        st.info("Cliquez sur 'Lancer les contrôles' pour démarrer l'analyse.")
