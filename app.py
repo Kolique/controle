@@ -68,15 +68,12 @@ def check_data(df):
     condition9 = is_kamstrup & (df_with_anomalies['Protocole Radio'] != 'WMS')
     df_with_anomalies.loc[condition9, 'Anomalie'] += "KAMSTRUP: Protocole Radio n'est pas 'WMS' / "
 
-    # Nouvelle règle A : Numéro de tête ne commence pas par DME
     condition_sappel_tete = is_sappel & (annee_fabrication_num > 22) & (~df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME'))
     df_with_anomalies.loc[condition_sappel_tete, 'Anomalie'] += "Sappel: Année > 22 et Numéro de tête ne commence pas par DME / "
 
-    # Nouvelle règle B : Protocole Radio ≠ OMS
     condition_sappel_protocole = is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
     df_with_anomalies.loc[condition_sappel_protocole, 'Anomalie'] += "Sappel: Année > 22 et Protocole Radio ≠ OMS / "
 
-    # Règle FP2E
     fp2e_map = {'A': 15, 'U': 15, 'Y': 15, 'Z': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 60, 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
     def check_fp2e(row):
@@ -103,7 +100,12 @@ def check_data(df):
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     return df_with_anomalies[df_with_anomalies['Anomalie'] != '']
 
-# Interface Streamlit
+def afficher_resume_anomalies(df_anomalies):
+    resume = df_anomalies['Anomalie'].str.split(' / ').explode().value_counts().reset_index()
+    resume.columns = ['Type d\'anomalie', 'Nombre d\'occurrences']
+    st.subheader("Résumé des anomalies")
+    st.dataframe(resume)
+
 st.title("Contrôle des données de Radiorelève")
 st.markdown("Veuillez téléverser votre fichier pour lancer les contrôles.")
 
@@ -143,6 +145,9 @@ if uploaded_file is not None:
         if not anomalies_df.empty:
             st.error("Anomalies détectées !")
             st.dataframe(anomalies_df)
+
+            afficher_resume_anomalies(anomalies_df)
+
             if file_extension == 'csv':
                 csv_file = anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
                 st.download_button(
