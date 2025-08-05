@@ -3,7 +3,6 @@ import pandas as pd
 import io
 import csv
 
-# @st.cache_data est conservé pour optimiser le temps de traitement initial
 @st.cache_data
 def get_csv_delimiter(file):
     """Détecte le délimiteur d'un fichier CSV."""
@@ -31,6 +30,11 @@ def check_data(df):
     
     df_with_anomalies['Anomalie'] = ''
 
+    # Nettoyage des colonnes avant les contrôles
+    for col in ['Marque', 'Numéro de compteur', 'Année de fabrication', 'Diametre', 'Protocole Radio']:
+        if pd.api.types.is_string_dtype(df_with_anomalies[col]):
+            df_with_anomalies[col] = df_with_anomalies[col].str.strip()
+
     is_kamstrup = df_with_anomalies['Marque'] == 'KAMSTRUP'
     is_sappel = df_with_anomalies['Marque'].isin(['SAPPEL (C)', 'SAPPEL (H)'])
     annee_fabrication_num = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
@@ -54,7 +58,7 @@ def check_data(df):
     condition3 = (is_kamstrup) & (~df_with_anomalies['Numéro de tête'].isnull()) & (~num_compteur_is_digit | ~num_tete_is_digit)
     df_with_anomalies.loc[condition3, 'Anomalie'] += "KAMSTRUP: Numéro de compteur ou tête contient une lettre / "
     
-    condition4 = (is_kamstrup) & (~df_with_anomalies['Diametre'].between(15, 80, inclusive='both'))
+    condition4 = (is_kamstrup) & (~pd.to_numeric(df_with_anomalies['Diametre'], errors='coerce').between(15, 80, inclusive='both'))
     df_with_anomalies.loc[condition4, 'Anomalie'] += "KAMSTRUP: Diamètre n'est pas entre 15 et 80 / "
     
     condition5 = (is_sappel) & (~df_with_anomalies['Numéro de tête'].isnull()) & (df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME')) & (df_with_anomalies['Numéro de tête'].astype(str).str.len() != 15)
@@ -80,33 +84,26 @@ def check_data(df):
     condition10b = (is_sappel) & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
     df_with_anomalies.loc[condition10b, 'Anomalie'] += "Sappel: Année > 22 sans Protocole Radio 'OMS' / "
 
-    # --- NOUVELLE RÈGLE FP2E ---
-    # Dictionnaire de correspondance des diamètres
+    # --- NOUVELLE RÈGLE FP2E (MISE À JOUR) ---
     diameter_map = {'A': 15, 'U': 15, 'Y': 15, 'Z': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
-    # Préparation des données pour le contrôle
     sappel_to_check = df_with_anomalies.loc[is_sappel].copy()
     sappel_to_check['Numéro de compteur'] = sappel_to_check['Numéro de compteur'].astype(str)
     
-    # Exclure les lignes qui n'ont pas un Numéro de compteur assez long pour la vérification
     has_valid_length = sappel_to_check['Numéro de compteur'].str.len() >= 4
     sappel_to_check = sappel_to_check.loc[has_valid_length].copy()
     
-    # Création des conditions de la loi FP2E
-    # 1. Première lettre correspond à la marque (C ou H)
     first_letter_ok = (
         (sappel_to_check['Marque'] == 'SAPPEL (C)') & (sappel_to_check['Numéro de compteur'].str[0] == 'C')
     ) | (
         (sappel_to_check['Marque'] == 'SAPPEL (H)') & (sappel_to_check['Numéro de compteur'].str[0] == 'H')
     )
-    
-    # 2. 2e et 3e chiffres correspondent à l'Année de fabrication
+
     year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str)
     
-    # 3. 4e lettre correspond au Diamètre
     def check_diameter(row):
         compteur_char = row['Numéro de compteur'][3].upper()
-        diametre_val = row['Diametre']
+        diametre_val = pd.to_numeric(row['Diametre'], errors='coerce')
         
         expected_diametres = diameter_map.get(compteur_char)
         if expected_diametres is None:
@@ -119,10 +116,8 @@ def check_data(df):
 
     diameter_ok = sappel_to_check.apply(check_diameter, axis=1)
 
-    # Combinaison des conditions pour trouver les anomalies
     fp2e_not_respected = sappel_to_check.index[~first_letter_ok | ~year_ok | ~diameter_ok]
     
-    # Ajout de l'anomalie dans le DataFrame principal
     df_with_anomalies.loc[fp2e_not_respected, 'Anomalie'] += "Sappel: Non conforme à la loi FP2E / "
     # --- FIN NOUVELLE RÈGLE ---
 
