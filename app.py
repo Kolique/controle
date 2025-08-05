@@ -83,13 +83,12 @@ def check_data(df):
     condition10b = (is_sappel) & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
     df_with_anomalies.loc[condition10b, 'Anomalie'] += "Sappel: Année > 22 sans Protocole Radio 'OMS' / "
 
-    # --- NOUVELLE RÈGLE FP2E (MISE À JOUR) ---
+    # --- RÈGLE FP2E ---
     diameter_map = {'A': 15, 'U': 15, 'Y': 15, 'Z': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
     sappel_to_check = df_with_anomalies.loc[is_sappel].copy()
     sappel_to_check['Numéro de compteur'] = sappel_to_check['Numéro de compteur'].astype(str)
     
-    # Correction de la longueur minimale pour la vérification de la 5e lettre
     has_valid_length = sappel_to_check['Numéro de compteur'].str.len() >= 5
     sappel_to_check = sappel_to_check.loc[has_valid_length].copy()
     
@@ -99,10 +98,9 @@ def check_data(df):
         (sappel_to_check['Marque'] == 'SAPPEL (H)') & (sappel_to_check['Numéro de compteur'].str[0] == 'H')
     )
 
-    year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str)
+    year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str).str[-2:]
     
     def check_diameter(row):
-        # Correction : On prend maintenant la 5e lettre (index 4)
         compteur_char = row['Numéro de compteur'][4].upper()
         diametre_val = pd.to_numeric(row['Diametre'], errors='coerce')
         
@@ -120,7 +118,7 @@ def check_data(df):
     fp2e_not_respected = sappel_to_check.index[~first_letter_ok | ~year_ok | ~diameter_ok]
     
     df_with_anomalies.loc[fp2e_not_respected, 'Anomalie'] += "Sappel: Non conforme à la loi FP2E / "
-    # --- FIN NOUVELLE RÈGLE ---
+    # --- FIN RÈGLE FP2E ---
 
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     
