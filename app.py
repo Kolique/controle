@@ -73,22 +73,27 @@ def check_data(df):
 
     condition9 = (is_kamstrup) & (df_with_anomalies['Protocole Radio'] != 'WMS')
     df_with_anomalies.loc[condition9, 'Anomalie'] += "KAMSTRUP: Protocole Radio n'est pas 'WMS' / "
-
-    condition10 = (is_sappel) & (annee_fabrication_num >= 22) & (df_with_anomalies['Protocole Radio'] != 'OMS') & (~df_with_anomalies['Numéro de tête'].isnull()) & (~df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME'))
-    df_with_anomalies.loc[condition10, 'Anomalie'] += "Sappel: Année >= 22 sans Protocole OMS ou Numéro de tête DME / "
     
+    # Règle 10a (nouvelle)
+    condition10a = (is_sappel) & (annee_fabrication_num > 22) & (~df_with_anomalies['Numéro de tête'].isnull()) & (~df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME'))
+    df_with_anomalies.loc[condition10a, 'Anomalie'] += "Sappel: Année > 22 sans Numéro de tête DME / "
+    
+    # Règle 10b (nouvelle)
+    condition10b = (is_sappel) & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
+    df_with_anomalies.loc[condition10b, 'Anomalie'] += "Sappel: Année > 22 sans Protocole Radio 'OMS' / "
+
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     
     anomalies_df = df_with_anomalies[df_with_anomalies['Anomalie'] != '']
     return anomalies_df
 
 # --- Interface Streamlit ---
+
 st.title("Contrôle des données de Radiorelève")
 st.markdown("Veuillez téléverser votre fichier pour lancer les contrôles.")
 
 uploaded_file = st.file_uploader("Choisissez un fichier", type=['csv', 'xlsx'])
 
-# Initialisation de l'état de la session
 if 'anomalies_df' not in st.session_state:
     st.session_state['anomalies_df'] = pd.DataFrame()
 if 'df' not in st.session_state:
@@ -117,7 +122,6 @@ if uploaded_file is not None:
     st.subheader("Aperçu des 5 premières lignes")
     st.dataframe(st.session_state['df'].head())
     
-    # Bouton pour extraire les communes
     if st.button("Extraire les communes uniques"):
         if 'Commune' in st.session_state['df'].columns:
             communes_uniques = st.session_state['df']['Commune'].dropna().unique()
@@ -126,12 +130,10 @@ if uploaded_file is not None:
         else:
             st.error("La colonne 'Commune' est introuvable. Veuillez vérifier que le nom de la colonne est correct.")
 
-    # Bouton principal pour lancer l'analyse
     if st.button("Lancer les contrôles"):
         with st.spinner('Contrôles en cours...'):
             st.session_state['anomalies_df'] = check_data(st.session_state['df'])
 
-# Section pour afficher les résultats (découplée du bouton de contrôle)
 if not st.session_state['anomalies_df'].empty:
     st.error("Anomalies détectées !")
     
@@ -154,7 +156,6 @@ if not st.session_state['anomalies_df'].empty:
             st.session_state['selected_anomalies'] = []
 
     selected_anomalies = []
-    # Création des checkboxes
     for atype in all_anomaly_types:
         if st.checkbox(atype, value=(atype in st.session_state['selected_anomalies']), key=atype):
             selected_anomalies.append(atype)
