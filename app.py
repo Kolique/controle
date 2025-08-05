@@ -83,14 +83,11 @@ def check_data(df):
     condition10b = (is_sappel) & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
     df_with_anomalies.loc[condition10b, 'Anomalie'] += "Sappel: Année > 22 sans Protocole Radio 'OMS' / "
 
-    # --- RÈGLE FP2E (CORRIGÉE) ---
+    # --- RÈGLE FP2E (MISE À JOUR) ---
     diameter_map = {'A': 15, 'U': 15, 'Y': 15, 'Z': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
     sappel_to_check = df_with_anomalies.loc[is_sappel].copy()
     sappel_to_check['Numéro de compteur'] = sappel_to_check['Numéro de compteur'].astype(str)
-    
-    # Suppression de la vérification de longueur qui filtrait les lignes
-    # On laisse la vérification se faire ligne par ligne
     
     first_letter_ok = (
         (sappel_to_check['Marque'] == 'SAPPEL (C)') & (sappel_to_check['Numéro de compteur'].str[0] == 'C')
@@ -101,10 +98,10 @@ def check_data(df):
     year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str).str[-2:]
     
     def check_diameter(row):
-        # Sécurité : Si le numéro est trop court, on retourne False directement pour ne pas planter
+        # La condition de sécurité est maintenant intégrée ici
         if len(str(row['Numéro de compteur'])) < 5:
             return False
-        
+            
         compteur_char = row['Numéro de compteur'][4].upper()
         diametre_val = pd.to_numeric(row['Diametre'], errors='coerce')
         
