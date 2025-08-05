@@ -101,6 +101,7 @@ def check_data(df):
     year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str).str[-2:]
     
     def check_diameter(row):
+        # CORRECTION : On prend la 5e caractère (indice 4)
         compteur_char = row['Numéro de compteur'][4].upper()
         diametre_val = pd.to_numeric(row['Diametre'], errors='coerce')
         
