@@ -46,7 +46,7 @@ def check_data(df):
 
     # Regroupement des conditions pour les marques pour plus de lisibilité
     is_kamstrup = df_with_anomalies['Marque'] == 'KAMSTRUP'
-    is_sappel = df_with_anomalies['Marque'].isin(['Sappel (C)', 'Sappel (H)'])
+    is_sappel = df_with_anomalies['Marque'].isin(['SAPPEL (C)', 'SAPPEL (H)'])
     
     # Règle 1
     condition1 = (is_sappel) & (df_with_anomalies['Numéro de tête'].isnull()) & (pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce') >= 22)
@@ -80,8 +80,8 @@ def check_data(df):
     df_with_anomalies.loc[condition7, 'Anomalie'] += "Marque Sappel : 'Numéro de compteur' ne commence ni par 'C' ni par 'H'; "
 
     # Règle 8
-    condition8 = ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('C')) & (df_with_anomalies['Marque'] != 'Sappel (C)')) | \
-                 ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('H')) & (df_with_anomalies['Marque'] != 'Sappel (H)'))
+    condition8 = ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('C')) & (df_with_anomalies['Marque'] != 'SAPPEL (C)')) | \
+                 ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('H')) & (df_with_anomalies['Marque'] != 'SAPPEL (H)'))
     df_with_anomalies.loc[condition8, 'Anomalie'] += "Incohérence entre 'Numéro de compteur' et 'Marque'; "
 
     # Règle 9 - CORRIGÉE
