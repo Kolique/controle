@@ -15,6 +15,7 @@ def get_csv_delimiter(file):
         file.seek(0)
         return ',' # Retourner la virgule par défaut si la détection échoue
 
+@st.cache_data
 def check_data(df):
     """
     Effectue tous les contrôles sur le DataFrame et retourne un DataFrame avec les anomalies.
@@ -26,7 +27,7 @@ def check_data(df):
     if not all(col in df_with_anomalies.columns for col in required_columns):
         missing_columns = [col for col in required_columns if col not in df_with_anomalies.columns]
         st.error(f"Votre fichier ne contient pas toutes les colonnes requises. Colonnes manquantes : {', '.join(missing_columns)}")
-        st.stop()
+        return pd.DataFrame()
     
     # Ajouter une colonne 'Anomalie' pour marquer les problèmes
     df_with_anomalies['Anomalie'] = ''
@@ -41,7 +42,6 @@ def check_data(df):
     # --- CONTROLES MODIFIÉS ET PRIORISÉS ---
     
     # Priorité 1: Règle sur la colonne "Numéro de tête" vide avec exception Sappel
-    # Condition d'anomalie : 'Numéro de tête' est vide ET (ce n'est pas une marque Sappel OU l'année est >= 22)
     condition_num_tete_vide = df_with_anomalies['Numéro de tête'].isnull() & (~is_sappel | (annee_fabrication_num >= 22))
     df_with_anomalies.loc[condition_num_tete_vide, 'Anomalie'] += 'Numéro de tête vide / '
     
@@ -111,7 +111,7 @@ def check_data(df):
     
     # -----------------------------
     
-    # Nettoyer la colonne d'anomalies (retirer le dernier ' / ')
+    # Nettoyer la colonne d'anomalies (retirer le dernier ' /')
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     
     # Filtrer uniquement les lignes avec des anomalies
@@ -153,15 +153,29 @@ if uploaded_file is not None:
             st.error("La colonne 'Commune' est introuvable. Veuillez vérifier que le nom de la colonne est correct.")
 
     if st.button("Lancer les contrôles"):
-        st.write("Contrôles en cours...")
-        anomalies_df = check_data(df)
+        with st.spinner('Contrôles en cours...'):
+            anomalies_df = check_data(df)
 
         if not anomalies_df.empty:
             st.error("Anomalies détectées !")
-            st.dataframe(anomalies_df)
             
+            # --- SYNTHÈSE DES ANOMALIES (NOUVEAU) ---
+            st.subheader("Résumé des anomalies")
+            anomaly_counts = anomalies_df['Anomalie'].str.split(' / ').explode().value_counts().rename_axis('Type d\'anomalie').reset_index(name='Nombre')
+            st.dataframe(anomaly_counts)
+            
+            # --- FILTRE INTERACTIF (NOUVEAU) ---
+            st.subheader("Filtrer les anomalies")
+            all_anomaly_types = anomaly_counts['Type d\'anomalie'].tolist()
+            selected_anomalies = st.multiselect("Sélectionnez les types d'anomalies à afficher", all_anomaly_types, default=all_anomaly_types)
+
+            filtered_anomalies_df = anomalies_df[anomalies_df['Anomalie'].apply(lambda x: any(atype in x for atype in selected_anomalies))]
+
+            st.dataframe(filtered_anomalies_df)
+            
+            # --- BOUTON DE TÉLÉCHARGEMENT ---
             if file_extension == 'csv':
-                csv_file = anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
+                csv_file = filtered_anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
                 st.download_button(
                     label="Télécharger les anomalies en CSV",
                     data=csv_file,
@@ -171,7 +185,7 @@ if uploaded_file is not None:
             elif file_extension == 'xlsx':
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                    anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
+                    filtered_anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
                 excel_buffer.seek(0)
 
                 st.download_button(
