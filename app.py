@@ -83,14 +83,14 @@ def check_data(df):
     condition10b = (is_sappel) & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
     df_with_anomalies.loc[condition10b, 'Anomalie'] += "Sappel: Année > 22 sans Protocole Radio 'OMS' / "
 
-    # --- RÈGLE FP2E ---
+    # --- RÈGLE FP2E (CORRIGÉE) ---
     diameter_map = {'A': 15, 'U': 15, 'Y': 15, 'Z': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
     sappel_to_check = df_with_anomalies.loc[is_sappel].copy()
     sappel_to_check['Numéro de compteur'] = sappel_to_check['Numéro de compteur'].astype(str)
     
-    has_valid_length = sappel_to_check['Numéro de compteur'].str.len() >= 5
-    sappel_to_check = sappel_to_check.loc[has_valid_length].copy()
+    # Suppression de la vérification de longueur qui filtrait les lignes
+    # On laisse la vérification se faire ligne par ligne
     
     first_letter_ok = (
         (sappel_to_check['Marque'] == 'SAPPEL (C)') & (sappel_to_check['Numéro de compteur'].str[0] == 'C')
@@ -101,12 +101,15 @@ def check_data(df):
     year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str).str[-2:]
     
     def check_diameter(row):
-        # CORRECTION : On prend la 5e caractère (indice 4)
+        # Sécurité : Si le numéro est trop court, on retourne False directement pour ne pas planter
+        if len(str(row['Numéro de compteur'])) < 5:
+            return False
+        
         compteur_char = row['Numéro de compteur'][4].upper()
         diametre_val = pd.to_numeric(row['Diametre'], errors='coerce')
         
         expected_diametres = diameter_map.get(compteur_char)
-        if expected_diametres is None:
+        if pd.isna(diametre_val) or expected_diametres is None:
             return False
         
         if isinstance(expected_diametres, list):
@@ -119,8 +122,7 @@ def check_data(df):
     fp2e_not_respected = sappel_to_check.index[~first_letter_ok | ~year_ok | ~diameter_ok]
     
     df_with_anomalies.loc[fp2e_not_respected, 'Anomalie'] += "Sappel: Non conforme à la loi FP2E / "
-    # --- FIN RÈGLE FP2E ---
-
+    
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     
     anomalies_df = df_with_anomalies[df_with_anomalies['Anomalie'] != '']
@@ -178,53 +180,29 @@ if not st.session_state['anomalies_df'].empty:
     anomaly_counts = st.session_state['anomalies_df']['Anomalie'].str.split(' / ').explode().value_counts().rename_axis('Type d\'anomalie').reset_index(name='Nombre')
     st.dataframe(anomaly_counts)
     
-    st.subheader("Filtrer les anomalies")
-    all_anomaly_types = anomaly_counts['Type d\'anomalie'].tolist()
+    st.subheader("Tableau complet des anomalies")
+    st.dataframe(st.session_state['anomalies_df'])
     
-    if 'selected_anomalies' not in st.session_state:
-        st.session_state['selected_anomalies'] = all_anomaly_types
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Sélectionner tout", key='select_all_btn'):
-            st.session_state['selected_anomalies'] = all_anomaly_types
-    with col2:
-        if st.button("Désélectionner tout", key='deselect_all_btn'):
-            st.session_state['selected_anomalies'] = []
-
-    selected_anomalies = []
-    for atype in all_anomaly_types:
-        if st.checkbox(atype, value=(atype in st.session_state['selected_anomalies']), key=atype):
-            selected_anomalies.append(atype)
-
-    if not selected_anomalies:
-        st.warning("Aucun filtre sélectionné. Le tableau des anomalies est vide.")
-        filtered_anomalies_df = pd.DataFrame()
-    else:
-        filtered_anomalies_df = st.session_state['anomalies_df'][st.session_state['anomalies_df']['Anomalie'].apply(lambda x: any(atype in x for atype in selected_anomalies))]
-
-    st.dataframe(filtered_anomalies_df)
-    
-    if not filtered_anomalies_df.empty:
+    if not st.session_state['anomalies_df'].empty:
         if st.session_state['file_extension'] == 'csv':
             delimiter = get_csv_delimiter(uploaded_file)
-            csv_file = filtered_anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
+            csv_file = st.session_state['anomalies_df'].to_csv(index=False, sep=delimiter).encode('utf-8')
             st.download_button(
-                label="Télécharger les anomalies filtrées en CSV",
+                label="Télécharger les anomalies en CSV",
                 data=csv_file,
-                file_name='anomalies_radioreleve_filtrees.csv',
+                file_name='anomalies_radioreleve.csv',
                 mime='text/csv',
             )
         elif st.session_state['file_extension'] == 'xlsx':
             excel_buffer = io.BytesIO()
             with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                filtered_anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
+                st.session_state['anomalies_df'].to_excel(writer, index=False, sheet_name='Anomalies')
             excel_buffer.seek(0)
 
             st.download_button(
-                label="Télécharger les anomalies filtrées en Excel",
+                label="Télécharger les anomalies en Excel",
                 data=excel_buffer,
-                file_name='anomalies_radioreleve_filtrees.xlsx',
+                file_name='anomalies_radioreleve.xlsx',
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             )
 else:
