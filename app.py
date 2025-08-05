@@ -22,7 +22,7 @@ def check_data(df):
     df_with_anomalies = df.copy()
     
     # Vérifier la présence des colonnes requises
-    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune']
+    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre', 'Type Compteur']
     if not all(col in df_with_anomalies.columns for col in required_columns):
         missing_columns = [col for col in required_columns if col not in df_with_anomalies.columns]
         st.error(f"Votre fichier ne contient pas toutes les colonnes requises. Colonnes manquantes : {', '.join(missing_columns)}")
@@ -31,33 +31,71 @@ def check_data(df):
     # Ajouter une colonne 'Anomalie' pour marquer les problèmes
     df_with_anomalies['Anomalie'] = ''
 
-    # 1. Contrôle des cases vides dans la colonne 'Protocole Radio'
+    # --- CONTROLES PRÉCÉDENTS ---
     df_with_anomalies.loc[df_with_anomalies['Protocole Radio'].isnull(), 'Anomalie'] += 'Colonne "Protocole Radio" vide; '
-
-    # 2. Contrôle des cases vides dans la colonne 'Marque'
     df_with_anomalies.loc[df_with_anomalies['Marque'].isnull(), 'Anomalie'] += 'Colonne "Marque" vide; '
-
-    # 3. Contrôle des cases vides dans la colonne 'Numéro de tête'
     df_with_anomalies.loc[df_with_anomalies['Numéro de tête'].isnull(), 'Anomalie'] += 'Colonne "Numéro de tête" vide; '
-
-    # 4. Contrôle des valeurs égales à zéro pour la 'Latitude'
     df_with_anomalies.loc[df_with_anomalies['Latitude'] == 0, 'Anomalie'] += 'Latitude égale à zéro; '
-    
-    # 5. Contrôle des valeurs égales à zéro pour la 'Longitude'
     df_with_anomalies.loc[df_with_anomalies['Longitude'] == 0, 'Anomalie'] += 'Longitude égale à zéro; '
-
-    # --- NOUVEAUX CONTRÔLES ---
-    # 6. Contrôle de la plage de la Latitude
     df_with_anomalies.loc[~df_with_anomalies['Latitude'].between(-90, 90, inclusive='both'), 'Anomalie'] += "Latitude invalide (hors de la plage [-90, 90]); "
-    
-    # 7. Contrôle de la plage de la Longitude
     df_with_anomalies.loc[~df_with_anomalies['Longitude'].between(-180, 180, inclusive='both'), 'Anomalie'] += "Longitude invalide (hors de la plage [-180, 180]); "
-    # -------------------------
-
-    # 8. Contrôle de la longueur des caractères pour la marque KAMSTRUP
     kamstrup_condition = (df_with_anomalies['Marque'] == 'KAMSTRUP') & (df_with_anomalies['Numéro de compteur'].astype(str).str.len() != 8)
     df_with_anomalies.loc[kamstrup_condition, 'Anomalie'] += "Marque KAMSTRUP : 'Numéro de compteur' n'a pas 8 caractères; "
 
+    # --- NOUVEAUX CONTRÔLES AJOUTÉS ---
+
+    # Regroupement des conditions pour les marques pour plus de lisibilité
+    is_kamstrup = df_with_anomalies['Marque'] == 'KAMSTRUP'
+    is_sappel = df_with_anomalies['Marque'].isin(['Sappel (C)', 'Sappel (H)'])
+    
+    # Règle 1
+    condition1 = (is_sappel) & (df_with_anomalies['Numéro de tête'].isnull()) & (pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce') >= 22)
+    df_with_anomalies.loc[condition1, 'Anomalie'] += "Marque Sappel : 'Numéro de tête' vide pour année de fabrication >= 22; "
+    
+    # Règle 2
+    condition2 = (is_kamstrup) & (df_with_anomalies['Numéro de compteur'] != df_with_anomalies['Numéro de tête'])
+    df_with_anomalies.loc[condition2, 'Anomalie'] += "Marque KAMSTRUP : 'Numéro de compteur' différent de 'Numéro de tête'; "
+    
+    # Règle 3
+    # Utiliser un masque pour éviter l'erreur sur les valeurs nulles
+    num_compteur_is_digit = df_with_anomalies['Numéro de compteur'].astype(str).str.isdigit()
+    num_tete_is_digit = df_with_anomalies['Numéro de tête'].astype(str).str.isdigit()
+    condition3 = (is_kamstrup) & (~num_compteur_is_digit | ~num_tete_is_digit)
+    df_with_anomalies.loc[condition3, 'Anomalie'] += "Marque KAMSTRUP : 'Numéro de compteur' ou 'Numéro de tête' contient une lettre; "
+    
+    # Règle 4
+    condition4 = (is_kamstrup) & (~df_with_anomalies['Diametre'].between(15, 80, inclusive='both'))
+    df_with_anomalies.loc[condition4, 'Anomalie'] += "Marque KAMSTRUP : 'Diametre' n'est pas entre 15 et 80; "
+    
+    # Règle 5
+    condition5 = (is_sappel) & (df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME')) & (df_with_anomalies['Numéro de tête'].astype(str).str.len() != 15)
+    df_with_anomalies.loc[condition5, 'Anomalie'] += "Marque Sappel : 'Numéro de tête' (DME) n'a pas 15 caractères; "
+
+    # Règle 6
+    regex_sappel_compteur = r'^[a-zA-Z]{1}\d{2}[a-zA-Z]{2}\d{6}$'
+    condition6 = (is_sappel) & (~df_with_anomalies['Numéro de compteur'].astype(str).str.match(regex_sappel_compteur))
+    df_with_anomalies.loc[condition6, 'Anomalie'] += "Marque Sappel : 'Numéro de compteur' ne respecte pas le format; "
+
+    # Règle 7
+    condition7 = (is_sappel) & (~df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('C')) & (~df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('H'))
+    df_with_anomalies.loc[condition7, 'Anomalie'] += "Marque Sappel : 'Numéro de compteur' ne commence ni par 'C' ni par 'H'; "
+
+    # Règle 8
+    condition8 = ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('C')) & (df_with_anomalies['Marque'] != 'Sappel (C)')) | \
+                 ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('H')) & (df_with_anomalies['Marque'] != 'Sappel (H)'))
+    df_with_anomalies.loc[condition8, 'Anomalie'] += "Incohérence entre 'Numéro de compteur' et 'Marque'; "
+
+    # Règle 9
+    condition9 = (is_kamstrup) & (df_with_anomalies['Type Compteur'] != 'WMS')
+    df_with_anomalies.loc[condition9, 'Anomalie'] += "Marque KAMSTRUP : 'Type Compteur' n'est pas 'WMS'; "
+
+    # Règle 10
+    annee_fabrication_num = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
+    condition10 = (is_sappel) & (annee_fabrication_num >= 22) & (df_with_anomalies['Type Compteur'] != 'OMS') & (~df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME'))
+    df_with_anomalies.loc[condition10, 'Anomalie'] += "Marque Sappel : Année >= 22 sans Type Compteur='OMS' ou 'Numéro de tête' commençant par 'DME'; "
+    
+    # -----------------------------
+    
     # Nettoyer la colonne d'anomalies (retirer le dernier '; ')
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(';')
     
