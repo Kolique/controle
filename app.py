@@ -74,20 +74,62 @@ def check_data(df):
     condition9 = (is_kamstrup) & (df_with_anomalies['Protocole Radio'] != 'WMS')
     df_with_anomalies.loc[condition9, 'Anomalie'] += "KAMSTRUP: Protocole Radio n'est pas 'WMS' / "
     
-    # Règle 10a (nouvelle)
     condition10a = (is_sappel) & (annee_fabrication_num > 22) & (~df_with_anomalies['Numéro de tête'].isnull()) & (~df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME'))
     df_with_anomalies.loc[condition10a, 'Anomalie'] += "Sappel: Année > 22 sans Numéro de tête DME / "
     
-    # Règle 10b (nouvelle)
     condition10b = (is_sappel) & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
     df_with_anomalies.loc[condition10b, 'Anomalie'] += "Sappel: Année > 22 sans Protocole Radio 'OMS' / "
+
+    # --- NOUVELLE RÈGLE FP2E ---
+    # Dictionnaire de correspondance des diamètres
+    diameter_map = {'A': 15, 'U': 15, 'Y': 15, 'Z': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
+
+    # Préparation des données pour le contrôle
+    sappel_to_check = df_with_anomalies.loc[is_sappel].copy()
+    sappel_to_check['Numéro de compteur'] = sappel_to_check['Numéro de compteur'].astype(str)
+    
+    # Exclure les lignes qui n'ont pas un Numéro de compteur assez long pour la vérification
+    has_valid_length = sappel_to_check['Numéro de compteur'].str.len() >= 4
+    sappel_to_check = sappel_to_check.loc[has_valid_length].copy()
+    
+    # Création des conditions de la loi FP2E
+    # 1. Première lettre correspond à la marque (C ou H)
+    first_letter_ok = (
+        (sappel_to_check['Marque'] == 'SAPPEL (C)') & (sappel_to_check['Numéro de compteur'].str[0] == 'C')
+    ) | (
+        (sappel_to_check['Marque'] == 'SAPPEL (H)') & (sappel_to_check['Numéro de compteur'].str[0] == 'H')
+    )
+    
+    # 2. 2e et 3e chiffres correspondent à l'Année de fabrication
+    year_ok = sappel_to_check['Numéro de compteur'].str[1:3] == sappel_to_check['Année de fabrication'].astype(str)
+    
+    # 3. 4e lettre correspond au Diamètre
+    def check_diameter(row):
+        compteur_char = row['Numéro de compteur'][3].upper()
+        diametre_val = row['Diametre']
+        
+        expected_diametres = diameter_map.get(compteur_char)
+        if expected_diametres is None:
+            return False
+        
+        if isinstance(expected_diametres, list):
+            return diametre_val in expected_diametres
+        else:
+            return diametre_val == expected_diametres
+
+    diameter_ok = sappel_to_check.apply(check_diameter, axis=1)
+
+    # Combinaison des conditions pour trouver les anomalies
+    fp2e_not_respected = sappel_to_check.index[~first_letter_ok | ~year_ok | ~diameter_ok]
+    
+    # Ajout de l'anomalie dans le DataFrame principal
+    df_with_anomalies.loc[fp2e_not_respected, 'Anomalie'] += "Sappel: Non conforme à la loi FP2E / "
+    # --- FIN NOUVELLE RÈGLE ---
 
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     
     anomalies_df = df_with_anomalies[df_with_anomalies['Anomalie'] != '']
     return anomalies_df
-
-# --- Interface Streamlit ---
 
 st.title("Contrôle des données de Radiorelève")
 st.markdown("Veuillez téléverser votre fichier pour lancer les contrôles.")
