@@ -48,26 +48,26 @@ def check_data(df):
     is_kamstrup = df_with_anomalies['Marque'] == 'KAMSTRUP'
     is_sappel = df_with_anomalies['Marque'].isin(['SAPPEL (C)', 'SAPPEL (H)'])
     
-    # Règle 1
+    # Règle 1 (Pas de changement, cette règle vérifie déjà si Numéro de tête est vide)
     condition1 = (is_sappel) & (df_with_anomalies['Numéro de tête'].isnull()) & (pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce') >= 22)
     df_with_anomalies.loc[condition1, 'Anomalie'] += "Marque Sappel : 'Numéro de tête' vide pour année de fabrication >= 22; "
     
-    # Règle 2 - CONTRÔLE DÉJÀ PRÉSENT ET CORRECT
-    condition2 = (is_kamstrup) & (df_with_anomalies['Numéro de compteur'] != df_with_anomalies['Numéro de tête'])
+    # Règle 2 - CORRIGÉE : Ajout de la condition pour que 'Numéro de tête' ne soit pas vide
+    condition2 = (is_kamstrup) & (~df_with_anomalies['Numéro de tête'].isnull()) & (df_with_anomalies['Numéro de compteur'] != df_with_anomalies['Numéro de tête'])
     df_with_anomalies.loc[condition2, 'Anomalie'] += "Marque KAMSTRUP : 'Numéro de compteur' différent de 'Numéro de tête'; "
     
-    # Règle 3
+    # Règle 3 - CORRIGÉE : Ajout de la condition pour que 'Numéro de tête' ne soit pas vide
     num_compteur_is_digit = df_with_anomalies['Numéro de compteur'].astype(str).str.isdigit()
     num_tete_is_digit = df_with_anomalies['Numéro de tête'].astype(str).str.isdigit()
-    condition3 = (is_kamstrup) & (~num_compteur_is_digit | ~num_tete_is_digit)
+    condition3 = (is_kamstrup) & (~df_with_anomalies['Numéro de tête'].isnull()) & (~num_compteur_is_digit | ~num_tete_is_digit)
     df_with_anomalies.loc[condition3, 'Anomalie'] += "Marque KAMSTRUP : 'Numéro de compteur' ou 'Numéro de tête' contient une lettre; "
     
     # Règle 4
     condition4 = (is_kamstrup) & (~df_with_anomalies['Diametre'].between(15, 80, inclusive='both'))
     df_with_anomalies.loc[condition4, 'Anomalie'] += "Marque KAMSTRUP : 'Diametre' n'est pas entre 15 et 80; "
     
-    # Règle 5
-    condition5 = (is_sappel) & (df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME')) & (df_with_anomalies['Numéro de tête'].astype(str).str.len() != 15)
+    # Règle 5 - CORRIGÉE : Ajout de la condition pour que 'Numéro de tête' ne soit pas vide
+    condition5 = (is_sappel) & (~df_with_anomalies['Numéro de tête'].isnull()) & (df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME')) & (df_with_anomalies['Numéro de tête'].astype(str).str.len() != 15)
     df_with_anomalies.loc[condition5, 'Anomalie'] += "Marque Sappel : 'Numéro de tête' (DME) n'a pas 15 caractères; "
 
     # Règle 6
@@ -84,13 +84,13 @@ def check_data(df):
                  ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('H')) & (df_with_anomalies['Marque'] != 'SAPPEL (H)'))
     df_with_anomalies.loc[condition8, 'Anomalie'] += "Incohérence entre 'Numéro de compteur' et 'Marque'; "
 
-    # Règle 9 - CORRIGÉE
+    # Règle 9
     condition9 = (is_kamstrup) & (df_with_anomalies['Protocole Radio'] != 'WMS')
     df_with_anomalies.loc[condition9, 'Anomalie'] += "Marque KAMSTRUP : 'Protocole Radio' n'est pas 'WMS'; "
 
-    # Règle 10 - CORRIGÉE
+    # Règle 10 - CORRIGÉE : Ajout de la condition pour que 'Numéro de tête' ne soit pas vide
     annee_fabrication_num = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
-    condition10 = (is_sappel) & (annee_fabrication_num >= 22) & (df_with_anomalies['Protocole Radio'] != 'OMS') & (~df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME'))
+    condition10 = (is_sappel) & (annee_fabrication_num >= 22) & (df_with_anomalies['Protocole Radio'] != 'OMS') & (~df_with_anomalies['Numéro de tête'].isnull()) & (~df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME'))
     df_with_anomalies.loc[condition10, 'Anomalie'] += "Marque Sappel : Année >= 22 sans Protocole Radio='OMS' ou 'Numéro de tête' commençant par 'DME'; "
     
     # -----------------------------
