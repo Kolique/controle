@@ -209,7 +209,8 @@ if uploaded_file is not None:
                 wb = load_workbook(excel_buffer)
                 ws = wb.active
                 
-                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+                # J'ai changé la couleur ici pour un rouge plus clair
+                red_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
 
                 # Utilisation d'un simple compteur 'i' pour correspondre aux lignes du fichier Excel de sortie
                 for i, row in enumerate(anomalies_df.iterrows()):
