@@ -104,7 +104,7 @@ def check_data(df):
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
 
     # Règle de diamètre FP2E (pour SAPPEL)
-    fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 65, 'H': 80, 'I': 100, 'J': 125, 'K': 150}
+    fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 60, 'G': 65, 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
     def check_fp2e_vectorized(row):
         try:
