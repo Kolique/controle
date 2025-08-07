@@ -41,8 +41,9 @@ def check_data(df):
     annee_fabrication_num = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
     
     # Anomalies simples (colonnes manquantes)
-    df_with_anomalies.loc[df_with_anomalies['Numéro de compteur'].isnull(), 'Anomalie'] += 'Numéro de compteur manquant / '
-    df_with_anomalies.loc[df_with_anomalies['Numéro de tête'].isnull() & (~is_sappel | (annee_fabrication_num >= 22)), 'Anomalie'] += 'Numéro de tête manquant / '
+    # Correction: Utilisation de .str.lower() pour être insensible à la casse
+    df_with_anomalies.loc[df_with_anomalies['Numéro de compteur'].str.lower() == 'nan', 'Anomalie'] += 'Numéro de compteur manquant / '
+    df_with_anomalies.loc[df_with_anomalies['Numéro de tête'].str.lower() == 'nan' & (~is_sappel | (annee_fabrication_num >= 22)), 'Anomalie'] += 'Numéro de tête manquant / '
     df_with_anomalies.loc[df_with_anomalies['Protocole Radio'].isnull(), 'Anomalie'] += 'Protocole manquant / '
     df_with_anomalies.loc[df_with_anomalies['Marque'].isnull(), 'Anomalie'] += 'Marque manquante / '
     
@@ -57,12 +58,12 @@ def check_data(df):
     kamstrup_len_condition = is_kamstrup & (df_with_anomalies['Numéro de compteur'].str.len() != 8)
     df_with_anomalies.loc[kamstrup_len_condition, 'Anomalie'] += "KAMSTRUP: compteur ≠ 8 caractères / "
     
-    condition2 = is_kamstrup & (df_with_anomalies['Numéro de tête'] != 'nan') & (df_with_anomalies['Numéro de compteur'] != df_with_anomalies['Numéro de tête'])
+    condition2 = is_kamstrup & (df_with_anomalies['Numéro de tête'].str.lower() != 'nan') & (df_with_anomalies['Numéro de compteur'] != df_with_anomalies['Numéro de tête'])
     df_with_anomalies.loc[condition2, 'Anomalie'] += "KAMSTRUP: compteur ≠ tête / "
     
     num_compteur_is_digit = df_with_anomalies['Numéro de compteur'].str.isdigit()
     num_tete_is_digit = df_with_anomalies['Numéro de tête'].str.isdigit()
-    condition3 = is_kamstrup & (df_with_anomalies['Numéro de tête'] != 'nan') & (~num_compteur_is_digit | ~num_tete_is_digit)
+    condition3 = is_kamstrup & (df_with_anomalies['Numéro de tête'].str.lower() != 'nan') & (~num_compteur_is_digit | ~num_tete_is_digit)
     df_with_anomalies.loc[condition3, 'Anomalie'] += "KAMSTRUP: compteur ou tête non numérique / "
     
     df_with_anomalies['Diametre'] = pd.to_numeric(df_with_anomalies['Diametre'], errors='coerce')
@@ -120,7 +121,6 @@ def afficher_resume_anomalies(df_anomalies):
     """
     Affiche un résumé des anomalies.
     """
-    # Correction de l'erreur de syntaxe ici
     resume = df_anomalies['Anomalie'].str.split(' / ').explode().value_counts().reset_index()
     resume.columns = ["Type d'anomalie", "Nombre d'occurrences"]
     st.subheader("Résumé des anomalies")
