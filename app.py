@@ -100,17 +100,20 @@ def check_data(df):
     df_with_anomalies.loc[condition_sappel_protocole, 'Anomalie'] += "SAPPEL: Année >22 & protocole ≠ OMS / "
     
     # Règle FP2E
-    fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 60, 'H': 80, 'I': 100, 'J': 125, 'K': 150}
+    # J'ai mis à jour le dictionnaire pour que 'G' corresponde à 65 comme vous l'avez demandé.
+    fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 60,'G': 65 ,'H': 80, 'I': 100, 'J': 125, 'K': 150}
+
     def check_fp2e(row):
         compteur = str(row['Numéro de compteur'])
         marque = row['Marque']
-        annee = str(int(row['Année de fabrication'])) if not pd.isnull(row['Année de fabrication']) else ''
+        # Utiliser pd.isna pour gérer les valeurs manquantes
+        annee = str(int(row['Année de fabrication'])) if not pd.isna(row['Année de fabrication']) else ''
         diametre = row['Diametre']
         if len(compteur) < 6 or pd.isnull(diametre):
             return False
         if (marque == 'SAPPEL (C)' and not compteur.startswith('C')) or (marque == 'SAPPEL (H)' and not compteur.startswith('H')):
             return False
-        if compteur[1:3] != annee.zfill(2)[-2:]:
+        if len(annee) < 2 or compteur[1:3] != annee.zfill(2)[-2:]:
             return False
         lettre_diam = compteur[4].upper()
         return fp2e_map.get(lettre_diam, None) == diametre
