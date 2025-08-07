@@ -81,48 +81,107 @@ def check_data(df):
         marque = row['Marque']
         annee = str(int(row['Année de fabrication'])) if not pd.isnull(row['Année de fabrication']) else ''
         diametre = row['Diametre']
-
         if len(compteur) < 6 or pd.isnull(diametre):
             return False
-
         if (marque == 'SAPPEL (C)' and not compteur.startswith('C')) or (marque == 'SAPPEL (H)' and not compteur.startswith('H')):
             return False
-
         if compteur[1:3] != annee.zfill(2)[-2:]:
             return False
-
         lettre_diam = compteur[4].upper()
         return fp2e_map.get(lettre_diam, None) == diametre
 
     condition_fp2e = is_sappel & (~df_with_anomalies.apply(check_fp2e, axis=1))
     df_with_anomalies.loc[condition_fp2e, 'Anomalie'] += "Sappel: règle FP2E non respectée / "
 
-    # Nettoyage des anomalies
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
 
-    # Regroupements intelligents
+    # Simplification lisible
     def simplifier_anomalies(texte):
         erreurs = set(texte.split(' / '))
         simplifiees = set()
-
         if any("Latitude" in e or "Longitude" in e for e in erreurs):
             simplifiees.add("Coordonnées GPS invalides")
             erreurs -= {e for e in erreurs if "Latitude" in e or "Longitude" in e}
-
         if any("Protocole" in e or "Marque" in e for e in erreurs):
             simplifiees.add("Données essentielles manquantes")
             erreurs -= {e for e in erreurs if "Protocole" in e or "Marque" in e}
-
         if any("KAMSTRUP" in e for e in erreurs):
             simplifiees.add("Incohérences KAMSTRUP")
             erreurs -= {e for e in erreurs if "KAMSTRUP" in e}
-
         if any("Sappel" in e for e in erreurs):
             simplifiees.add("Incohérences SAPPEL")
             erreurs -= {e for e in erreurs if "Sappel" in e}
-
         return ' / '.join(simplifiees.union(erreurs))
 
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].apply(simplifier_anomalies)
-
     return df_with_anomalies[df_with_anomalies['Anomalie'] != '']
+
+def afficher_resume_anomalies(df_anomalies):
+    resume = df_anomalies['Anomalie'].str.split(' / ').explode().value_counts().reset_index()
+    resume.columns = ['Type d\'anomalie', 'Nombre d\'occurrences']
+    st.subheader("Résumé des anomalies")
+    st.dataframe(resume)
+
+# Interface utilisateur Streamlit
+st.title("Contrôle des données de Radiorelève")
+st.markdown("Veuillez téléverser votre fichier pour lancer les contrôles.")
+
+uploaded_file = st.file_uploader("Choisissez un fichier", type=['csv', 'xlsx'])
+
+if uploaded_file is not None:
+    st.success("Fichier chargé avec succès !")
+    try:
+        file_extension = uploaded_file.name.split('.')[-1]
+        if file_extension == 'csv':
+            delimiter = get_csv_delimiter(uploaded_file)
+            df = pd.read_csv(uploaded_file, sep=delimiter)
+        elif file_extension == 'xlsx':
+            df = pd.read_excel(uploaded_file)
+        else:
+            st.error("Format de fichier non pris en charge. Veuillez utiliser un fichier .csv ou .xlsx.")
+            st.stop()
+    except Exception as e:
+        st.error(f"Une erreur est survenue lors de la lecture du fichier : {e}")
+        st.stop()
+
+    st.subheader("Aperçu des 5 premières lignes")
+    st.dataframe(df.head())
+
+    if st.button("Extraire les communes uniques"):
+        if 'Commune' in df.columns:
+            communes_uniques = df['Commune'].dropna().unique()
+            st.write("Communes uniques trouvées dans le fichier :")
+            st.write(communes_uniques)
+        else:
+            st.error("La colonne 'Commune' est introuvable. Veuillez vérifier que le nom de la colonne est correct.")
+
+    if st.button("Lancer les contrôles"):
+        st.write("Contrôles en cours...")
+        anomalies_df = check_data(df)
+
+        if not anomalies_df.empty:
+            st.error("Anomalies détectées !")
+            st.dataframe(anomalies_df)
+            afficher_resume_anomalies(anomalies_df)
+
+            if file_extension == 'csv':
+                csv_file = anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
+                st.download_button(
+                    label="Télécharger les anomalies en CSV",
+                    data=csv_file,
+                    file_name='anomalies_radioreleve.csv',
+                    mime='text/csv',
+                )
+            elif file_extension == 'xlsx':
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
+                excel_buffer.seek(0)
+                st.download_button(
+                    label="Télécharger les anomalies en Excel",
+                    data=excel_buffer,
+                    file_name='anomalies_radioreleve.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                )
+        else:
+            st.success("Aucune anomalie détectée ! Les données sont conformes.")
