@@ -205,19 +205,19 @@ if uploaded_file is not None:
                 
                 red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
 
-                for index, row in anomalies_df.iterrows():
+                for original_index, row in anomalies_df.iterrows():
                     anomalies = str(row['Anomalie']).split(' / ')
                     for anomaly in anomalies:
                         if anomaly in anomaly_columns_map:
                             columns_to_highlight = anomaly_columns_map[anomaly]
                             for col_name in columns_to_highlight:
-                                # Trouver l'index de la colonne pour la cellule
+                                # Utiliser l'index d'origine pour trouver la ligne correcte dans le fichier Excel
+                                # L'index + 2 est nécessaire pour compenser l'en-tête (ligne 1) et l'indexation de base 0 de pandas
                                 try:
                                     col_index = anomalies_df.columns.get_loc(col_name) + 1
-                                    cell = ws.cell(row=index + 2, column=col_index)
+                                    cell = ws.cell(row=original_index + 2, column=col_index)
                                     cell.fill = red_fill
                                 except KeyError:
-                                    # Gérer les cas où une colonne n'existe pas, bien que peu probable
                                     pass
                                 
                 excel_buffer_styled = io.BytesIO()
