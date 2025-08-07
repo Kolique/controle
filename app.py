@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import io
 import csv
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill
+from openpyxl import load_workbook
 
 def get_csv_delimiter(file):
     """
@@ -41,10 +44,8 @@ def check_data(df):
     annee_fabrication_num = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
     
     # Anomalies simples (colonnes manquantes)
-    # Correction: Utilisation de .str.lower() pour être insensible à la casse
     df_with_anomalies.loc[df_with_anomalies['Numéro de compteur'].str.lower() == 'nan', 'Anomalie'] += 'Numéro de compteur manquant / '
     
-    # Correction de l'erreur TypeError : les conditions sont bien parenthésées
     condition_num_tete_manquant = (df_with_anomalies['Numéro de tête'].str.lower() == 'nan') & (~is_sappel | (annee_fabrication_num >= 22))
     df_with_anomalies.loc[condition_num_tete_manquant, 'Anomalie'] += 'Numéro de tête manquant / '
 
@@ -169,14 +170,60 @@ if uploaded_file is not None:
             st.error("Anomalies détectées !")
             st.dataframe(anomalies_df)
             afficher_resume_anomalies(anomalies_df)
+            
+            # Dictionnaire pour mapper les anomalies aux colonnes
+            anomaly_columns_map = {
+                'Numéro de compteur manquant': ['Numéro de compteur'],
+                'Numéro de tête manquant': ['Numéro de tête'],
+                'Protocole manquant': ['Protocole Radio'],
+                'Marque manquante': ['Marque'],
+                'Coordonnées invalides': ['Latitude', 'Longitude'],
+                "KAMSTRUP: compteur ≠ 8 caractères": ['Numéro de compteur'],
+                "KAMSTRUP: compteur ≠ tête": ['Numéro de compteur', 'Numéro de tête'],
+                "KAMSTRUP: compteur ou tête non numérique": ['Numéro de compteur', 'Numéro de tête'],
+                "KAMSTRUP: diamètre hors plage": ['Diametre'],
+                "KAMSTRUP: protocole ≠ WMS": ['Protocole Radio'],
+                "SAPPEL: tête DME ≠ 15 caractères": ['Numéro de tête'],
+                "SAPPEL: compteur ≠ format attendu": ['Numéro de compteur'],
+                "SAPPEL: compteur ne commence pas par C ou H": ['Numéro de compteur'],
+                "SAPPEL: incohérence Marque/compteur": ['Marque', 'Numéro de compteur'],
+                "SAPPEL: Année >22 & tête ≠ DME": ['Année de fabrication', 'Numéro de tête'],
+                "SAPPEL: Année >22 & protocole ≠ OMS": ['Année de fabrication', 'Protocole Radio'],
+                "SAPPEL: non conforme FP2E": ['Numéro de compteur', 'Année de fabrication', 'Diametre'],
+            }
+
             if file_extension == 'csv':
                 csv_file = anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
                 st.download_button("Télécharger les anomalies en CSV", csv_file, "anomalies_radioreleve.csv", "text/csv")
             elif file_extension == 'xlsx':
                 excel_buffer = io.BytesIO()
-                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                    anomalies_df.to_excel(writer, index=False, sheet_name='Anomalies')
+                anomalies_df.to_excel(excel_buffer, index=False, sheet_name='Anomalies', engine='openpyxl')
                 excel_buffer.seek(0)
-                st.download_button("Télécharger les anomalies en Excel", excel_buffer, "anomalies_radioreleve.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                
+                wb = load_workbook(excel_buffer)
+                ws = wb.active
+                
+                red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
+
+                for index, row in anomalies_df.iterrows():
+                    anomalies = str(row['Anomalie']).split(' / ')
+                    for anomaly in anomalies:
+                        if anomaly in anomaly_columns_map:
+                            columns_to_highlight = anomaly_columns_map[anomaly]
+                            for col_name in columns_to_highlight:
+                                # Trouver l'index de la colonne pour la cellule
+                                try:
+                                    col_index = anomalies_df.columns.get_loc(col_name) + 1
+                                    cell = ws.cell(row=index + 2, column=col_index)
+                                    cell.fill = red_fill
+                                except KeyError:
+                                    # Gérer les cas où une colonne n'existe pas, bien que peu probable
+                                    pass
+                                
+                excel_buffer_styled = io.BytesIO()
+                wb.save(excel_buffer_styled)
+                excel_buffer_styled.seek(0)
+
+                st.download_button("Télécharger les anomalies en Excel", excel_buffer_styled, "anomalies_radioreleve.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else:
             st.success("Aucune anomalie détectée. Les données sont conformes.")
