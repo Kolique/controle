@@ -32,37 +32,40 @@ def check_data(df):
         protocole = str(row.get("Protocole Radio", "")).strip().upper()
         tete = str(row.get("Numéro de tête", "")).strip()
 
-        # Loi FP2E (SAPPEL ou ITRON)
+        # Loi FP2E (SAPPEL ou ITRON uniquement)
         if marque in ["SAPPEL (C)", "SAPPEL (H)", "ITRON"] and len(num) >= 5:
-            fp2e_issue = False
             if marque == "SAPPEL (C)" and not num.startswith("C"):
-                fp2e_issue = True
+                row_anomalies.append("FP2E : première lettre incorrecte (doit être 'C')")
             elif marque == "SAPPEL (H)" and not num.startswith("H"):
-                fp2e_issue = True
-            else:
-                annee = num[1:3]
-                code_diam = num[4]
-                if not annee.isdigit() or code_diam.upper() not in "AUYZBCDEFGHIJK":
-                    fp2e_issue = True
+                row_anomalies.append("FP2E : première lettre incorrecte (doit être 'H')")
 
-            if marque.startswith("SAPPEL") and annee.isdigit() and int(annee) > 22:
+            annee = num[1:3]
+            if not annee.isdigit():
+                row_anomalies.append("FP2E : année de fabrication invalide")
+
+            code_diam = num[4]
+            diam_codes = "AUYZBCDEFGHIJK"
+            if code_diam.upper() not in diam_codes:
+                row_anomalies.append("FP2E : code diamètre invalide")
+
+        # WMS/OMS incohérence SAPPEL
+        if marque.startswith("SAPPEL"):
+            annee = num[1:3] if len(num) >= 3 else ""
+            if annee.isdigit() and int(annee) > 22:
                 if not tete.startswith("DME") or protocole != "OMS":
-                    fp2e_issue = True
-
-            if fp2e_issue:
-                row_anomalies.append("Loi FP2E non respectée")
+                    row_anomalies.append("Protocole Radio incohérent avec la tête (FP2E)")
 
         # KAMSTRUP
         if marque == "KAMSTRUP":
             if any(c.isalpha() for c in num):
-                row_anomalies.append("KAMSTRUP: Numéro compteur contient des lettres")
+                row_anomalies.append("KAMSTRUP : numéro compteur contient des lettres")
             if num != tete:
-                row_anomalies.append("KAMSTRUP: Numéro compteur ≠ Numéro tête")
+                row_anomalies.append("KAMSTRUP : numéro compteur ≠ numéro tête")
 
         anomalies.append(row_anomalies)
 
     df["Anomalie"] = [" / ".join(msgs) if msgs else "" for msgs in anomalies]
-    return df, anomalies
+    return df[df["Anomalie"] != ""], anomalies
 
 # Fonction pour générer l'Excel avec mises en forme
 def generate_excel_with_highlights(df, anomalies_list):
@@ -76,26 +79,34 @@ def generate_excel_with_highlights(df, anomalies_list):
 
     for idx, anomaly_msgs in enumerate(anomalies_list):
         for msg in anomaly_msgs:
-            # Coordonnées GPS invalides
             if "Coordonnées GPS invalides" in msg:
                 for col in ["Latitude", "Longitude"]:
                     if col in df.columns:
                         col_idx = df.columns.get_loc(col) + 1
                         worksheet.cell(row=idx+2, column=col_idx).fill = red_fill
-            # Données manquantes
             if "Données manquantes" in msg:
                 champs = msg.replace("Données manquantes : ", "").split(", ")
                 for field in champs:
                     if field in df.columns:
                         col_idx = df.columns.get_loc(field) + 1
                         worksheet.cell(row=idx+2, column=col_idx).fill = red_fill
-            # Loi FP2E non respectée
-            if "Loi FP2E non respectée" in msg:
-                for field in ["Numéro de compteur", "Numéro de tête", "Protocole Radio"]:
+            if "FP2E : première lettre incorrecte" in msg:
+                if "Numéro de compteur" in df.columns:
+                    col_idx = df.columns.get_loc("Numéro de compteur") + 1
+                    worksheet.cell(row=idx+2, column=col_idx).fill = red_fill
+            if "FP2E : année de fabrication invalide" in msg:
+                if "Numéro de compteur" in df.columns:
+                    col_idx = df.columns.get_loc("Numéro de compteur") + 1
+                    worksheet.cell(row=idx+2, column=col_idx).fill = red_fill
+            if "FP2E : code diamètre invalide" in msg:
+                if "Numéro de compteur" in df.columns:
+                    col_idx = df.columns.get_loc("Numéro de compteur") + 1
+                    worksheet.cell(row=idx+2, column=col_idx).fill = red_fill
+            if "Protocole Radio incohérent avec la tête" in msg:
+                for field in ["Protocole Radio", "Numéro de tête"]:
                     if field in df.columns:
                         col_idx = df.columns.get_loc(field) + 1
                         worksheet.cell(row=idx+2, column=col_idx).fill = red_fill
-            # KAMSTRUP
             if "KAMSTRUP" in msg:
                 for field in ["Numéro de compteur", "Numéro de tête"]:
                     if field in df.columns:
@@ -114,11 +125,10 @@ if uploaded_file:
 
     if st.button("Lancer les contrôles"):
         df_result, anomalies_list = check_data(df)
-        anomalies_df = df_result[df_result["Anomalie"] != ""]
 
-        if not anomalies_df.empty:
-            st.warning(f"{len(anomalies_df)} ligne(s) présentent des anomalies.")
-            st.dataframe(anomalies_df)
+        if not df_result.empty:
+            st.warning(f"{len(df_result)} ligne(s) présentent des anomalies.")
+            st.dataframe(df_result)
 
             output_file = generate_excel_with_highlights(df_result, anomalies_list)
             st.download_button("⬇ Télécharger le fichier avec anomalies", data=output_file,
