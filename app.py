@@ -197,7 +197,15 @@ if uploaded_file is not None:
                 st.download_button("Télécharger les anomalies en CSV", csv_file, "anomalies_radioreleve.csv", "text/csv")
             elif file_extension == 'xlsx':
                 excel_buffer = io.BytesIO()
-                anomalies_df.to_excel(excel_buffer, index=False, sheet_name='Anomalies', engine='openpyxl')
+                # On utilise le DataFrame original pour la mise en forme de l'Excel afin de conserver toutes les lignes
+                df_to_export = df.copy()
+                df_to_export['Anomalie'] = ''
+                
+                # On met à jour la colonne 'Anomalie' avec les résultats de notre analyse
+                anomalies_dict = anomalies_df.set_index(anomalies_df.index)['Anomalie'].to_dict()
+                df_to_export.loc[anomalies_dict.keys(), 'Anomalie'] = anomalies_dict.values()
+
+                df_to_export.to_excel(excel_buffer, index=False, sheet_name='Anomalies', engine='openpyxl')
                 excel_buffer.seek(0)
                 
                 wb = load_workbook(excel_buffer)
@@ -214,7 +222,7 @@ if uploaded_file is not None:
                                 # Utiliser l'index d'origine pour trouver la ligne correcte dans le fichier Excel
                                 # L'index + 2 est nécessaire pour compenser l'en-tête (ligne 1) et l'indexation de base 0 de pandas
                                 try:
-                                    col_index = anomalies_df.columns.get_loc(col_name) + 1
+                                    col_index = df.columns.get_loc(col_name) + 1
                                     cell = ws.cell(row=original_index + 2, column=col_index)
                                     cell.fill = red_fill
                                 except KeyError:
