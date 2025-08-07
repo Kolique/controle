@@ -43,7 +43,11 @@ def check_data(df):
     # Anomalies simples (colonnes manquantes)
     # Correction: Utilisation de .str.lower() pour être insensible à la casse
     df_with_anomalies.loc[df_with_anomalies['Numéro de compteur'].str.lower() == 'nan', 'Anomalie'] += 'Numéro de compteur manquant / '
-    df_with_anomalies.loc[df_with_anomalies['Numéro de tête'].str.lower() == 'nan' & (~is_sappel | (annee_fabrication_num >= 22)), 'Anomalie'] += 'Numéro de tête manquant / '
+    
+    # Correction de l'erreur TypeError : les conditions sont bien parenthésées
+    condition_num_tete_manquant = (df_with_anomalies['Numéro de tête'].str.lower() == 'nan') & (~is_sappel | (annee_fabrication_num >= 22))
+    df_with_anomalies.loc[condition_num_tete_manquant, 'Anomalie'] += 'Numéro de tête manquant / '
+
     df_with_anomalies.loc[df_with_anomalies['Protocole Radio'].isnull(), 'Anomalie'] += 'Protocole manquant / '
     df_with_anomalies.loc[df_with_anomalies['Marque'].isnull(), 'Anomalie'] += 'Marque manquante / '
     
