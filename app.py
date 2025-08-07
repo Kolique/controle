@@ -1,10 +1,12 @@
-
 import streamlit as st
 import pandas as pd
 import io
 import csv
 
 def get_csv_delimiter(file):
+    """
+    Détermine le délimiteur d'un fichier CSV.
+    """
     try:
         sample = file.read(2048).decode('utf-8')
         dialect = csv.Sniffer().sniff(sample)
@@ -15,66 +17,82 @@ def get_csv_delimiter(file):
         return ','
 
 def check_data(df):
+    """
+    Vérifie les données du DataFrame et ajoute une colonne 'Anomalie'.
+    """
     df_with_anomalies = df.copy()
     required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre']
+    
+    # Vérification des colonnes requises
     if not all(col in df_with_anomalies.columns for col in required_columns):
         missing_columns = [col for col in required_columns if col not in df_with_anomalies.columns]
         st.error(f"Colonnes manquantes : {', '.join(missing_columns)}")
         st.stop()
 
     df_with_anomalies['Anomalie'] = ''
+    
+    # Conversion des colonnes pour les analyses
+    df_with_anomalies['Numéro de compteur'] = df_with_anomalies['Numéro de compteur'].astype(str)
+    df_with_anomalies['Numéro de tête'] = df_with_anomalies['Numéro de tête'].astype(str)
+    
+    # Marqueurs pour les conditions
     is_kamstrup = df_with_anomalies['Marque'] == 'KAMSTRUP'
     is_sappel = df_with_anomalies['Marque'].isin(['SAPPEL (C)', 'SAPPEL (H)'])
     annee_fabrication_num = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
-
-    # Anomalies simples
+    
+    # Anomalies simples (colonnes manquantes)
     df_with_anomalies.loc[df_with_anomalies['Numéro de compteur'].isnull(), 'Anomalie'] += 'Numéro de compteur manquant / '
     df_with_anomalies.loc[df_with_anomalies['Numéro de tête'].isnull() & (~is_sappel | (annee_fabrication_num >= 22)), 'Anomalie'] += 'Numéro de tête manquant / '
     df_with_anomalies.loc[df_with_anomalies['Protocole Radio'].isnull(), 'Anomalie'] += 'Protocole manquant / '
     df_with_anomalies.loc[df_with_anomalies['Marque'].isnull(), 'Anomalie'] += 'Marque manquante / '
-
+    
     # Coordonnées
-    coord_invalid = ((df_with_anomalies['Latitude'] == 0) | (~df_with_anomalies['Latitude'].between(-90, 90))) |                     ((df_with_anomalies['Longitude'] == 0) | (~df_with_anomalies['Longitude'].between(-180, 180)))
+    df_with_anomalies['Latitude'] = pd.to_numeric(df_with_anomalies['Latitude'], errors='coerce')
+    df_with_anomalies['Longitude'] = pd.to_numeric(df_with_anomalies['Longitude'], errors='coerce')
+    coord_invalid = ((df_with_anomalies['Latitude'] == 0) | (~df_with_anomalies['Latitude'].between(-90, 90))) | \
+                    ((df_with_anomalies['Longitude'] == 0) | (~df_with_anomalies['Longitude'].between(-180, 180)))
     df_with_anomalies.loc[coord_invalid, 'Anomalie'] += 'Coordonnées invalides / '
 
-    # KAMSTRUP
-    kamstrup_len_condition = is_kamstrup & (df_with_anomalies['Numéro de compteur'].astype(str).str.len() != 8)
+    # Règles pour KAMSTRUP
+    kamstrup_len_condition = is_kamstrup & (df_with_anomalies['Numéro de compteur'].str.len() != 8)
     df_with_anomalies.loc[kamstrup_len_condition, 'Anomalie'] += "KAMSTRUP: compteur ≠ 8 caractères / "
-
-    condition2 = is_kamstrup & (~df_with_anomalies['Numéro de tête'].isnull()) & (df_with_anomalies['Numéro de compteur'] != df_with_anomalies['Numéro de tête'])
+    
+    condition2 = is_kamstrup & (df_with_anomalies['Numéro de tête'] != 'nan') & (df_with_anomalies['Numéro de compteur'] != df_with_anomalies['Numéro de tête'])
     df_with_anomalies.loc[condition2, 'Anomalie'] += "KAMSTRUP: compteur ≠ tête / "
-
-    num_compteur_is_digit = df_with_anomalies['Numéro de compteur'].astype(str).str.isdigit()
-    num_tete_is_digit = df_with_anomalies['Numéro de tête'].astype(str).str.isdigit()
-    condition3 = is_kamstrup & (~df_with_anomalies['Numéro de tête'].isnull()) & (~num_compteur_is_digit | ~num_tete_is_digit)
+    
+    num_compteur_is_digit = df_with_anomalies['Numéro de compteur'].str.isdigit()
+    num_tete_is_digit = df_with_anomalies['Numéro de tête'].str.isdigit()
+    condition3 = is_kamstrup & (df_with_anomalies['Numéro de tête'] != 'nan') & (~num_compteur_is_digit | ~num_tete_is_digit)
     df_with_anomalies.loc[condition3, 'Anomalie'] += "KAMSTRUP: compteur ou tête non numérique / "
-
+    
+    df_with_anomalies['Diametre'] = pd.to_numeric(df_with_anomalies['Diametre'], errors='coerce')
     condition4 = is_kamstrup & (~df_with_anomalies['Diametre'].between(15, 80))
     df_with_anomalies.loc[condition4, 'Anomalie'] += "KAMSTRUP: diamètre hors plage / "
-
+    
     condition9 = is_kamstrup & (df_with_anomalies['Protocole Radio'] != 'WMS')
     df_with_anomalies.loc[condition9, 'Anomalie'] += "KAMSTRUP: protocole ≠ WMS / "
-
-    # SAPPEL
-    condition5 = is_sappel & (~df_with_anomalies['Numéro de tête'].isnull()) & (df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME')) & (df_with_anomalies['Numéro de tête'].astype(str).str.len() != 15)
+    
+    # Règles pour SAPPEL
+    condition5 = is_sappel & (df_with_anomalies['Numéro de tête'].str.startswith('DME')) & (df_with_anomalies['Numéro de tête'].str.len() != 15)
     df_with_anomalies.loc[condition5, 'Anomalie'] += "SAPPEL: tête DME ≠ 15 caractères / "
-
+    
     regex_sappel_compteur = r'^[a-zA-Z]{1}\d{2}[a-zA-Z]{2}\d{6}$'
-    condition6 = is_sappel & (~df_with_anomalies['Numéro de compteur'].astype(str).str.match(regex_sappel_compteur))
+    condition6 = is_sappel & (~df_with_anomalies['Numéro de compteur'].str.match(regex_sappel_compteur))
     df_with_anomalies.loc[condition6, 'Anomalie'] += "SAPPEL: compteur ≠ format attendu / "
-
-    condition7 = is_sappel & (~df_with_anomalies['Numéro de compteur'].astype(str).str.startswith(('C', 'H')))
+    
+    condition7 = is_sappel & (~df_with_anomalies['Numéro de compteur'].str.startswith(('C', 'H')))
     df_with_anomalies.loc[condition7, 'Anomalie'] += "SAPPEL: compteur ne commence pas par C ou H / "
-
-    condition8 = ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('C')) & (df_with_anomalies['Marque'] != 'SAPPEL (C)')) |                  ((df_with_anomalies['Numéro de compteur'].astype(str).str.startswith('H')) & (df_with_anomalies['Marque'] != 'SAPPEL (H)'))
+    
+    condition8 = ((df_with_anomalies['Numéro de compteur'].str.startswith('C')) & (df_with_anomalies['Marque'] != 'SAPPEL (C)')) | \
+                 ((df_with_anomalies['Numéro de compteur'].str.startswith('H')) & (df_with_anomalies['Marque'] != 'SAPPEL (H)'))
     df_with_anomalies.loc[condition8, 'Anomalie'] += "SAPPEL: incohérence Marque/compteur / "
-
-    condition_sappel_tete = is_sappel & (annee_fabrication_num > 22) & (~df_with_anomalies['Numéro de tête'].astype(str).str.startswith('DME'))
+    
+    condition_sappel_tete = is_sappel & (annee_fabrication_num > 22) & (~df_with_anomalies['Numéro de tête'].str.startswith('DME'))
     df_with_anomalies.loc[condition_sappel_tete, 'Anomalie'] += "SAPPEL: Année >22 & tête ≠ DME / "
-
+    
     condition_sappel_protocole = is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'] != 'OMS')
     df_with_anomalies.loc[condition_sappel_protocole, 'Anomalie'] += "SAPPEL: Année >22 & protocole ≠ OMS / "
-
+    
     # Règle FP2E
     fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 60, 'H': 80, 'I': 100, 'J': 125, 'K': 150}
     def check_fp2e(row):
@@ -90,16 +108,21 @@ def check_data(df):
             return False
         lettre_diam = compteur[4].upper()
         return fp2e_map.get(lettre_diam, None) == diametre
-
+    
     condition_fp2e = is_sappel & (~df_with_anomalies.apply(check_fp2e, axis=1))
     df_with_anomalies.loc[condition_fp2e, 'Anomalie'] += "SAPPEL: non conforme FP2E / "
-
+    
+    # Nettoyage de la colonne 'Anomalie'
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     return df_with_anomalies[df_with_anomalies['Anomalie'] != '']
 
 def afficher_resume_anomalies(df_anomalies):
+    """
+    Affiche un résumé des anomalies.
+    """
+    # Correction de l'erreur de syntaxe ici
     resume = df_anomalies['Anomalie'].str.split(' / ').explode().value_counts().reset_index()
-    resume.columns = ['Type d'anomalie', 'Nombre d'occurrences']
+    resume.columns = ["Type d'anomalie", "Nombre d'occurrences"]
     st.subheader("Résumé des anomalies")
     st.dataframe(resume)
 
@@ -123,7 +146,7 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"Erreur lors de la lecture du fichier : {e}")
         st.stop()
-
+    
     st.subheader("Aperçu des 5 premières lignes")
     st.dataframe(df.head())
 
