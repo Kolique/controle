@@ -207,18 +207,17 @@ if uploaded_file is not None:
                 
                 red_fill = PatternFill(start_color='FFFF0000', end_color='FFFF0000', fill_type='solid')
 
-                # Itère sur le DataFrame d'anomalies pour la mise en forme
-                # L'indexation est correcte car anomalies_df ne contient que les lignes à exporter
-                for index, row in anomalies_df.iterrows():
-                    anomalies = str(row['Anomalie']).split(' / ')
+                # Utilisation d'un simple compteur 'i' pour correspondre aux lignes du fichier Excel de sortie
+                for i, row in enumerate(anomalies_df.iterrows()):
+                    anomalies = str(row[1]['Anomalie']).split(' / ')
                     for anomaly in anomalies:
                         if anomaly in anomaly_columns_map:
                             columns_to_highlight = anomaly_columns_map[anomaly]
                             for col_name in columns_to_highlight:
                                 try:
                                     col_index = anomalies_df.columns.get_loc(col_name) + 1
-                                    # L'indexation de la ligne Excel commence à 2 (en-tête + index 0 de la boucle)
-                                    cell = ws.cell(row=index + 2, column=col_index)
+                                    # La ligne dans le fichier Excel est le compteur 'i' + 2 (pour l'en-tête)
+                                    cell = ws.cell(row=i + 2, column=col_index)
                                     cell.fill = red_fill
                                 except KeyError:
                                     pass
