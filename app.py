@@ -101,7 +101,7 @@ def check_data(df):
     
     # Règle FP2E
     # J'ai mis à jour le dictionnaire pour que 'G' corresponde à 65 comme vous l'avez demandé.
-    fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 60,'G': 65 ,'H': 80, 'I': 100, 'J': 125, 'K': 150}
+    fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 65, 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
     def check_fp2e(row):
         compteur = str(row['Numéro de compteur'])
@@ -113,6 +113,7 @@ def check_data(df):
             return False
         if (marque == 'SAPPEL (C)' and not compteur.startswith('C')) or (marque == 'SAPPEL (H)' and not compteur.startswith('H')):
             return False
+        # Assurer que l'année du compteur est bien une année valide
         if len(annee) < 2 or compteur[1:3] != annee.zfill(2)[-2:]:
             return False
         lettre_diam = compteur[4].upper()
