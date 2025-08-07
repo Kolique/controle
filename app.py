@@ -12,6 +12,7 @@ def get_csv_delimiter(file):
     Détermine le délimiteur d'un fichier CSV.
     """
     try:
+        # L'utilisation de file.read() consomme le fichier, il faut donc le replacer au début
         sample = file.read(2048).decode('utf-8')
         dialect = csv.Sniffer().sniff(sample)
         file.seek(0)
@@ -28,7 +29,7 @@ def check_data(df):
     df_with_anomalies = df.copy()
 
     # Vérification des colonnes requises
-    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre']
+    required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre', 'Mode de relève']
     if not all(col in df_with_anomalies.columns for col in required_columns):
         missing_columns = [col for col in required_columns if col not in df_with_anomalies.columns]
         st.error(f"Colonnes requises manquantes : {', '.join(missing_columns)}")
@@ -37,10 +38,12 @@ def check_data(df):
     df_with_anomalies['Anomalie'] = ''
 
     # Conversion des colonnes pour les analyses et remplacement des NaN par des chaînes vides
+    # Ajout de 'Mode de relève' pour s'assurer qu'il est bien une chaîne
     df_with_anomalies['Numéro de compteur'] = df_with_anomalies['Numéro de compteur'].astype(str).replace('nan', '', regex=False)
     df_with_anomalies['Numéro de tête'] = df_with_anomalies['Numéro de tête'].astype(str).replace('nan', '', regex=False)
     df_with_anomalies['Marque'] = df_with_anomalies['Marque'].astype(str).replace('nan', '', regex=False)
     df_with_anomalies['Protocole Radio'] = df_with_anomalies['Protocole Radio'].astype(str).replace('nan', '', regex=False)
+    df_with_anomalies['Mode de relève'] = df_with_anomalies['Mode de relève'].astype(str).replace('nan', '', regex=False)
     
     # Marqueurs pour les conditions
     is_kamstrup = df_with_anomalies['Marque'].str.upper() == 'KAMSTRUP'
@@ -53,7 +56,10 @@ def check_data(df):
     # ------------------------------------------------------------------
     
     # Colonnes manquantes
-    df_with_anomalies.loc[df_with_anomalies['Protocole Radio'].isin(['', 'nan']), 'Anomalie'] += 'Protocole Radio manquant / '
+    # Nouvelle règle de contrôle : ne pas considérer comme une anomalie si le protocole radio est manquant
+    # ET le mode de relève est "Manuelle".
+    condition_protocole_manquant = (df_with_anomalies['Protocole Radio'].isin(['', 'nan'])) & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
+    df_with_anomalies.loc[condition_protocole_manquant, 'Anomalie'] += 'Protocole Radio manquant / '
     df_with_anomalies.loc[df_with_anomalies['Marque'].isin(['', 'nan']), 'Anomalie'] += 'Marque manquante / '
     df_with_anomalies.loc[df_with_anomalies['Numéro de compteur'].isin(['', 'nan']), 'Anomalie'] += 'Numéro de compteur manquant / '
     df_with_anomalies.loc[df_with_anomalies['Diametre'].isnull(), 'Anomalie'] += 'Diamètre manquant / '
@@ -145,11 +151,18 @@ if uploaded_file is not None:
 
     try:
         file_extension = uploaded_file.name.split('.')[-1]
+        
+        # Définir le type de données pour les colonnes pour éviter la notation scientifique
+        dtype_mapping = {
+            'Numéro de branchement': str,
+            'Abonnement': str
+        }
+
         if file_extension == 'csv':
             delimiter = get_csv_delimiter(uploaded_file)
-            df = pd.read_csv(uploaded_file, sep=delimiter)
+            df = pd.read_csv(uploaded_file, sep=delimiter, dtype=dtype_mapping)
         elif file_extension == 'xlsx':
-            df = pd.read_excel(uploaded_file)
+            df = pd.read_excel(uploaded_file, dtype=dtype_mapping)
         else:
             st.error("Format de fichier non pris en charge. Veuillez utiliser un fichier .csv ou .xlsx.")
             st.stop()
