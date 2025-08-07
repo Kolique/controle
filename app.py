@@ -45,6 +45,10 @@ def check_data(df):
     df_with_anomalies['Protocole Radio'] = df_with_anomalies['Protocole Radio'].astype(str).replace('nan', '', regex=False)
     df_with_anomalies['Mode de relève'] = df_with_anomalies['Mode de relève'].astype(str).replace('nan', '', regex=False)
     
+    # Conversion des colonnes Latitude et Longitude en numérique pour éviter le TypeError
+    df_with_anomalies['Latitude'] = pd.to_numeric(df_with_anomalies['Latitude'], errors='coerce')
+    df_with_anomalies['Longitude'] = pd.to_numeric(df_with_anomalies['Longitude'], errors='coerce')
+
     # Marqueurs pour les conditions
     is_kamstrup = df_with_anomalies['Marque'].str.upper() == 'KAMSTRUP'
     is_sappel = df_with_anomalies['Marque'].str.upper().isin(['SAPPEL (C)', 'SAPPEL (H)'])
@@ -70,6 +74,7 @@ def check_data(df):
     df_with_anomalies.loc[condition_tete_manquante, 'Anomalie'] += 'Numéro de tête manquant / '
 
     # Coordonnées
+    # La conversion en numérique ci-dessus résout le TypeError ici
     df_with_anomalies.loc[df_with_anomalies['Latitude'].isnull() | df_with_anomalies['Longitude'].isnull(), 'Anomalie'] += 'Coordonnées GPS non numériques / '
     coord_invalid = ((df_with_anomalies['Latitude'] == 0) | (~df_with_anomalies['Latitude'].between(-90, 90))) | \
                     ((df_with_anomalies['Longitude'] == 0) | (~df_with_anomalies['Longitude'].between(-180, 180)))
@@ -160,8 +165,10 @@ if uploaded_file is not None:
 
         if file_extension == 'csv':
             delimiter = get_csv_delimiter(uploaded_file)
+            # Lecture du fichier avec la conversion de type pour éviter la notation scientifique
             df = pd.read_csv(uploaded_file, sep=delimiter, dtype=dtype_mapping)
         elif file_extension == 'xlsx':
+            # Lecture du fichier avec la conversion de type pour éviter la notation scientifique
             df = pd.read_excel(uploaded_file, dtype=dtype_mapping)
         else:
             st.error("Format de fichier non pris en charge. Veuillez utiliser un fichier .csv ou .xlsx.")
