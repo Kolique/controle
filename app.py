@@ -31,7 +31,7 @@ def check_data(df):
     # Vérification des colonnes requises
     required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre', 'Mode de relève']
     if not all(col in df_with_anomalies.columns for col in required_columns):
-        missing_columns = [col for col in required_with_anomalies if col not in df_with_anomalies.columns]
+        missing_columns = [col for col in required_columns if col not in df_with_anomalies.columns]
         st.error(f"Colonnes requises manquantes : {', '.join(missing_columns)}")
         st.stop()
 
@@ -125,13 +125,9 @@ def check_data(df):
             if pd.isna(annee_fabrication_val):
                 return False
             
-            annee_fabrication_str = str(int(annee_fabrication_val))
-            
-            # Correction: Ajout d'un zéro si l'année n'a qu'un chiffre
-            if len(annee_fabrication_str) == 1:
-                annee_fabrication_padded = '0' + annee_fabrication_str
-            else:
-                annee_fabrication_padded = annee_fabrication_str
+            # Correction: Traitez l'année comme une chaîne et ajoutez un zéro si nécessaire
+            annee_fabrication_str = str(int(annee_fabrication_val)) if pd.notna(annee_fabrication_val) else ''
+            annee_fabrication_padded = annee_fabrication_str.zfill(2)
                 
             # Vérification de la correspondance des années
             if annee_compteur != annee_fabrication_padded:
