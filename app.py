@@ -31,7 +31,7 @@ def check_data(df):
     # Vérification des colonnes requises
     required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre', 'Mode de relève']
     if not all(col in df_with_anomalies.columns for col in required_columns):
-        missing_columns = [col for col in required_columns if col not in df_with_anomalies.columns]
+        missing_columns = [col for col in required_with_anomalies if col not in df_with_anomalies.columns]
         st.error(f"Colonnes requises manquantes : {', '.join(missing_columns)}")
         st.stop()
 
@@ -109,17 +109,37 @@ def check_data(df):
     # Règle de diamètre FP2E (pour SAPPEL)
     fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 60, 'G': 65, 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
+    # Correction de la fonction check_fp2e_vectorized pour gérer les années à 1 ou 2 chiffres
     def check_fp2e_vectorized(row):
         try:
             compteur = row['Numéro de compteur']
-            annee_compteur = compteur[1:3]
-            annee_fabrication = str(int(row['Année de fabrication'])) if pd.notna(row['Année de fabrication']) else ''
-            if len(annee_fabrication) < 2 or annee_compteur != annee_fabrication[-2:]:
+            # Vérifiez que le numéro de compteur est assez long
+            if len(compteur) < 5:
                 return False
             
+            # Année de fabrication dans le numéro de compteur (ex: '06')
+            annee_compteur = compteur[1:3]
+            
+            # Année de fabrication dans la colonne "Année de fabrication"
+            annee_fabrication_val = row['Année de fabrication']
+            if pd.isna(annee_fabrication_val):
+                return False
+            
+            annee_fabrication_str = str(int(annee_fabrication_val))
+            
+            # Correction: Ajout d'un zéro si l'année n'a qu'un chiffre
+            if len(annee_fabrication_str) == 1:
+                annee_fabrication_padded = '0' + annee_fabrication_str
+            else:
+                annee_fabrication_padded = annee_fabrication_str
+                
+            # Vérification de la correspondance des années
+            if annee_compteur != annee_fabrication_padded:
+                return False
+                
             lettre_diam = compteur[4].upper()
             return fp2e_map.get(lettre_diam, None) == row['Diametre']
-        except:
+        except (TypeError, ValueError, IndexError):
             return False
 
     sappel_fp2e_condition = is_sappel & (df_with_anomalies['Numéro de compteur'].str.len() >= 5) & (df_with_anomalies['Diametre'].notnull())
