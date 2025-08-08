@@ -70,7 +70,10 @@ def check_data(df):
     df_with_anomalies.loc[annee_fabrication_num.isnull(), 'Anomalie'] += 'Année de fabrication manquante / '
     
     # Numéro de tête manquant (sauf pour SAPPEL avec année < 22)
-    condition_tete_manquante = (df_with_anomalies['Numéro de tête'].isin(['', 'nan'])) & (~is_sappel | (annee_fabrication_num >= 22))
+    # ET la nouvelle condition pour "Mode de relève" Manuelle
+    condition_tete_manquante = (df_with_anomalies['Numéro de tête'].isin(['', 'nan'])) & \
+                               (~is_sappel | (annee_fabrication_num >= 22)) & \
+                               (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
     df_with_anomalies.loc[condition_tete_manquante, 'Anomalie'] += 'Numéro de tête manquant / '
 
     # Coordonnées
