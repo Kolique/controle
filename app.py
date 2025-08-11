@@ -4,12 +4,29 @@ import io
 import csv
 import re
 from openpyxl import Workbook
-from openpyxl.styles import PatternFill
-from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.utils import get_column_letter
+
+# Table de correspondance Diametre -> Lettre pour FP2E
+diametre_lettre = {
+    15: ['A', 'U', 'V'],
+    20: ['B'],
+    25: ['C'],
+    30: ['D'],
+    40: ['E'],
+    50: ['F'],
+    60: ['G'],
+    65: ['G'],
+    80: ['H'],
+    100: ['I'],
+    125: ['J'],
+    150: ['K']
+}
 
 def get_csv_delimiter(file):
     """
-    Détermine le délimiteur d'un fichier CSV.
+    Détecte automatiquement le délimiteur d'un fichier CSV.
     """
     try:
         # L'utilisation de file.read() consomme le fichier, il faut donc le replacer au début
@@ -247,23 +264,37 @@ if uploaded_file is not None:
 
             if file_extension == 'csv':
                 csv_file = anomalies_df.to_csv(index=False, sep=delimiter).encode('utf-8')
-                st.download_button("Télécharger les anomalies en CSV", csv_file, "anomalies_radioreleve.csv", "text/csv")
+                st.download_button(
+                    label="Télécharger les anomalies en CSV",
+                    data=csv_file,
+                    file_name='anomalies_radioreleve.csv',
+                    mime='text/csv',
+                )
             elif file_extension == 'xlsx':
                 excel_buffer = io.BytesIO()
                 
-                # Exporte uniquement le DataFrame des anomalies vers Excel
-                anomalies_df.to_excel(excel_buffer, index=False, sheet_name='Anomalies', engine='openpyxl')
-                excel_buffer.seek(0)
+                # Création d'un classeur Excel
+                wb = Workbook()
                 
-                wb = load_workbook(excel_buffer)
-                ws = wb.active
+                # Suppression de la première feuille par défaut qui est vide et création de la feuille "Récapitulatif"
+                default_sheet = wb.active
+                wb.remove(default_sheet)
+                ws_summary = wb.create_sheet(title="Récapitulatif", index=0)
                 
-                # J'ai changé la couleur ici pour un rouge plus clair
+                # Ajout de la nouvelle feuille "Toutes les anomalies"
+                ws_all_anomalies = wb.create_sheet(title="Toutes_Anomalies", index=1)
+                for r_df_idx, row_data in enumerate(dataframe_to_rows(anomalies_df, index=False, header=True)):
+                    ws_all_anomalies.append(row_data)
+
+                # Mise en forme de la feuille "Toutes les anomalies"
+                header_font = Font(bold=True)
                 red_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
 
-                # Utilisation d'un simple compteur 'i' pour correspondre aux lignes du fichier Excel de sortie
-                for i, row in enumerate(anomalies_df.iterrows()):
-                    anomalies = str(row[1]['Anomalie']).split(' / ')
+                for cell in ws_all_anomalies[1]:
+                    cell.font = header_font
+
+                for row_num_all, df_row in enumerate(anomalies_df.iterrows()):
+                    anomalies = str(df_row[1]['Anomalie']).split(' / ')
                     for anomaly in anomalies:
                         anomaly_key = anomaly.strip()
                         if anomaly_key in anomaly_columns_map:
@@ -271,16 +302,128 @@ if uploaded_file is not None:
                             for col_name in columns_to_highlight:
                                 try:
                                     col_index = list(anomalies_df.columns).index(col_name) + 1
-                                    # La ligne dans le fichier Excel est le compteur 'i' + 2 (pour l'en-tête)
-                                    cell = ws.cell(row=i + 2, column=col_index)
+                                    cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
                                     cell.fill = red_fill
                                 except ValueError:
                                     pass
-                                
+
+                # Ajuster la largeur des colonnes dans la feuille "Toutes les anomalies"
+                for col in ws_all_anomalies.columns:
+                    max_length = 0
+                    column = col[0].column
+                    for cell in col:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = (max_length + 2)
+                    ws_all_anomalies.column_dimensions[get_column_letter(column)].width = adjusted_width
+
+                # Mise en forme pour le titre du résumé
+                title_font = Font(bold=True, size=16)
+                
+                ws_summary['A1'] = "Récapitulatif des anomalies"
+                ws_summary['A1'].font = title_font
+                
+                ws_summary.append([]) # Ligne vide pour la séparation
+                ws_summary.append(["Type d'anomalie", "Nombre de cas"])
+                ws_summary['A3'].font = header_font
+                ws_summary['B3'].font = header_font
+                
+                # Création d'une liste pour stocker les noms de feuilles déjà créées
+                created_sheet_names = set(["Toutes_Anomalies"])
+
+                # Ajouter un lien vers la nouvelle feuille "Toutes les anomalies"
+                ws_summary.cell(row=ws_summary.max_row + 1, column=1, value="Toutes les anomalies").hyperlink = f"#Toutes_Anomalies!A1"
+                ws_summary.cell(row=ws_summary.max_row, column=1).font = Font(underline="single", color="0563C1")
+                ws_summary.cell(row=ws_summary.max_row, column=2, value=len(anomalies_df)).font = header_font
+                ws_summary.cell(row=ws_summary.max_row, column=2).alignment = Alignment(horizontal="right")
+                
+                for r_idx, (anomaly_type, count) in enumerate(anomaly_counter.items()):
+                    # Correction du nettoyage du nom de la feuille et ajout d'une vérification d'unicité
+                    sheet_name = re.sub(r'[\\/?*\[\]:()\'"<>|]', '', anomaly_type)
+                    sheet_name = sheet_name.replace(' ', '_').replace('.', '').strip()
+                    sheet_name = sheet_name[:31]
+                    
+                    # S'assurer que le nom de la feuille est unique
+                    original_sheet_name = sheet_name
+                    counter = 1
+                    while sheet_name in created_sheet_names:
+                        sheet_name = f"{original_sheet_name[:28]}_{counter}"
+                        counter += 1
+                    created_sheet_names.add(sheet_name)
+
+                    row_num = ws_summary.max_row + 1
+                    ws_summary.cell(row=row_num, column=1, value=anomaly_type)
+                    ws_summary.cell(row=row_num, column=2, value=count)
+                    
+                    # Création de la feuille pour cette anomalie
+                    ws_anomaly_detail = wb.create_sheet(title=sheet_name)
+                    
+                    # Écriture des données de l'anomalie dans la feuille dédiée
+                    filtered_df = anomalies_df[anomalies_df['Anomalie'].str.contains(anomaly_type, regex=False)]
+                    
+                    for r_df_idx, row_data in enumerate(dataframe_to_rows(filtered_df, index=False, header=True)):
+                        ws_anomaly_detail.append(row_data)
+
+                    # Mise en forme et en couleur de la feuille détaillée
+                    for cell in ws_anomaly_detail[1]:
+                        cell.font = header_font
+                    
+                    for row_num_detail, df_row in enumerate(filtered_df.iterrows()):
+                        anomalies = str(df_row[1]['Anomalie']).split(' / ')
+                        for anomaly in anomalies:
+                            anomaly_key = anomaly.strip()
+                            if anomaly_key in anomaly_columns_map:
+                                columns_to_highlight = anomaly_columns_map[anomaly_key]
+                                for col_name in columns_to_highlight:
+                                    try:
+                                        col_index = list(filtered_df.columns).index(col_name) + 1
+                                        cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
+                                        cell.fill = red_fill
+                                    except ValueError:
+                                        pass
+
+                    # Ajuster la largeur des colonnes dans la feuille détaillée
+                    for col in ws_anomaly_detail.columns:
+                        max_length = 0
+                        column = col[0].column
+                        for cell in col:
+                            try:
+                                if len(str(cell.value)) > max_length:
+                                    max_length = len(str(cell.value))
+                            except:
+                                pass
+                        adjusted_width = (max_length + 2)
+                        ws_anomaly_detail.column_dimensions[get_column_letter(column)].width = adjusted_width
+
+                    # Création du lien vers la feuille détaillée sur la page de résumé
+                    ws_summary.cell(row=row_num, column=1).hyperlink = f"#{sheet_name}!A1"
+                    ws_summary.cell(row=row_num, column=1).font = Font(underline="single", color="0563C1")
+                    
+                # Ajuster la largeur des colonnes dans le résumé
+                for col in ws_summary.columns:
+                    max_length = 0
+                    column = col[0].column
+                    for cell in col:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = (max_length + 2)
+                    ws_summary.column_dimensions[get_column_letter(column)].width = adjusted_width
+                
                 excel_buffer_styled = io.BytesIO()
                 wb.save(excel_buffer_styled)
                 excel_buffer_styled.seek(0)
 
-                st.download_button("Télécharger les anomalies en Excel", excel_buffer_styled, "anomalies_radioreleve.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button(
+                    label="Télécharger les anomalies en Excel",
+                    data=excel_buffer_styled,
+                    file_name='anomalies_radioreleve.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                )
         else:
             st.success("Aucune anomalie détectée. Les données sont conformes.")
