@@ -43,23 +43,21 @@ def check_data(df):
     Retourne un DataFrame avec les lignes contenant des anomalies.
     """
     df_with_anomalies = df.copy()
-    
+
     # --- DÉBUT DE LA LOGIQUE CORRIGÉE POUR L'ANNÉE DE FABRICATION ---
-    # Conversion de la colonne en numérique, en forçant les erreurs à NaN
-    # Cela permet de gérer les valeurs non numériques (ex: texte) sans erreur
-    df_with_anomalies['Année de fabrication'] = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
+    # Convertir d'abord la colonne en chaîne de caractères, en remplacant les valeurs manquantes
+    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].astype(str).replace('nan', '', regex=False)
     
-    # Remplacement des valeurs NaN par des chaînes vides
-    # Puis, conversion en entier pour enlever le '.0', puis en chaîne de caractères
-    # J'ai ajouté .astype(int) pour convertir les float en int avant de les transformer en string
-    # Cela permet de transformer '8.0' en '8'
+    # Nettoyer spécifiquement les valeurs qui ont le format ".0"
+    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].str.replace(r'\.0$', '', regex=True)
+
+    # Ensuite, ajouter un "0" au début pour les chiffres uniques
+    # On utilise .apply(lambda x: x.zfill(2) if x.isdigit() else x) pour s'assurer
+    # que seules les valeurs numériques sont modifiées et que les chaînes vides ne deviennent pas '00'
     df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].apply(
-        lambda x: str(int(x)) if pd.notna(x) else ''
+        lambda x: x.zfill(2) if x.isdigit() else x
     )
-    
-    # Finalement, on utilise zfill(2) pour rajouter un '0' si l'année est un seul chiffre
-    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].str.zfill(2)
-    
+
     # --- FIN DE LA LOGIQUE CORRIGÉE ---
     
     # Vérification des colonnes requises
@@ -72,7 +70,6 @@ def check_data(df):
     df_with_anomalies['Anomalie'] = ''
 
     # Conversion des colonnes pour les analyses et remplacement des NaN par des chaînes vides
-    # Le traitement de 'Année de fabrication' a déjà été fait, donc je l'ai retiré d'ici.
     df_with_anomalies['Numéro de compteur'] = df_with_anomalies['Numéro de compteur'].astype(str).replace('nan', '', regex=False)
     df_with_anomalies['Numéro de tête'] = df_with_anomalies['Numéro de tête'].astype(str).replace('nan', '', regex=False)
     df_with_anomalies['Marque'] = df_with_anomalies['Marque'].astype(str).replace('nan', '', regex=False)
