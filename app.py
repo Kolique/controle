@@ -276,9 +276,11 @@ if uploaded_file is not None:
                 # Création d'un classeur Excel
                 wb = Workbook()
                 
-                # Suppression de la première feuille par défaut qui est vide et création de la feuille "Récapitulatif"
-                default_sheet = wb.active
-                wb.remove(default_sheet)
+                # Suppression de la première feuille par défaut qui est vide
+                if "Sheet" in wb.sheetnames:
+                    wb.remove(wb["Sheet"])
+                
+                # Création de la feuille "Récapitulatif"
                 ws_summary = wb.create_sheet(title="Récapitulatif", index=0)
                 
                 # Ajout de la nouvelle feuille "Toutes les anomalies"
@@ -332,13 +334,14 @@ if uploaded_file is not None:
                 ws_summary['B3'].font = header_font
                 
                 # Création d'une liste pour stocker les noms de feuilles déjà créées
-                created_sheet_names = set(["Toutes_Anomalies"])
+                created_sheet_names = set(["Récapitulatif", "Toutes_Anomalies"])
 
                 # Ajouter un lien vers la nouvelle feuille "Toutes les anomalies"
-                ws_summary.cell(row=ws_summary.max_row + 1, column=1, value="Toutes les anomalies").hyperlink = f"#Toutes_Anomalies!A1"
-                ws_summary.cell(row=ws_summary.max_row, column=1).font = Font(underline="single", color="0563C1")
-                ws_summary.cell(row=ws_summary.max_row, column=2, value=len(anomalies_df)).font = header_font
-                ws_summary.cell(row=ws_summary.max_row, column=2).alignment = Alignment(horizontal="right")
+                row_num_all_anomalies = ws_summary.max_row + 1
+                ws_summary.cell(row=row_num_all_anomalies, column=1, value="Toutes les anomalies").hyperlink = f"#Toutes_Anomalies!A1"
+                ws_summary.cell(row=row_num_all_anomalies, column=1).font = Font(underline="single", color="0563C1")
+                ws_summary.cell(row=row_num_all_anomalies, column=2, value=len(anomalies_df))
+                ws_summary.cell(row=row_num_all_anomalies, column=2).alignment = Alignment(horizontal="right")
                 
                 for r_idx, (anomaly_type, count) in enumerate(anomaly_counter.items()):
                     # Correction du nettoyage du nom de la feuille et ajout d'une vérification d'unicité
