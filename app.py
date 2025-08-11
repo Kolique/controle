@@ -29,7 +29,6 @@ def get_csv_delimiter(file):
     Détecte automatiquement le délimiteur d'un fichier CSV.
     """
     try:
-        # L'utilisation de file.read() consomme le fichier, il faut donc le replacer au début
         sample = file.read(2048).decode('utf-8')
         dialect = csv.Sniffer().sniff(sample)
         file.seek(0)
@@ -44,17 +43,25 @@ def check_data(df):
     Retourne un DataFrame avec les lignes contenant des anomalies.
     """
     df_with_anomalies = df.copy()
-
-    # --- NOUVELLE LOGIQUE AJOUTÉE ---
-    # Traitement de la colonne 'Année de fabrication' pour formater les chiffres simples
-    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].astype(str)
     
-    # Remplacer les valeurs qui sont des nombres à un chiffre par leur version avec un zéro en début
+    # --- DÉBUT DE LA LOGIQUE CORRIGÉE POUR L'ANNÉE DE FABRICATION ---
+    # Conversion de la colonne en numérique, en forçant les erreurs à NaN
+    # Cela permet de gérer les valeurs non numériques (ex: texte) sans erreur
+    df_with_anomalies['Année de fabrication'] = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
+    
+    # Remplacement des valeurs NaN par des chaînes vides
+    # Puis, conversion en entier pour enlever le '.0', puis en chaîne de caractères
+    # J'ai ajouté .astype(int) pour convertir les float en int avant de les transformer en string
+    # Cela permet de transformer '8.0' en '8'
     df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].apply(
-        lambda x: x.zfill(2) if x.isdigit() and len(x) == 1 else x
+        lambda x: str(int(x)) if pd.notna(x) else ''
     )
-    # --- FIN DE LA NOUVELLE LOGIQUE ---
-
+    
+    # Finalement, on utilise zfill(2) pour rajouter un '0' si l'année est un seul chiffre
+    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].str.zfill(2)
+    
+    # --- FIN DE LA LOGIQUE CORRIGÉE ---
+    
     # Vérification des colonnes requises
     required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre', 'Mode de relève']
     if not all(col in df_with_anomalies.columns for col in required_columns):
@@ -65,7 +72,7 @@ def check_data(df):
     df_with_anomalies['Anomalie'] = ''
 
     # Conversion des colonnes pour les analyses et remplacement des NaN par des chaînes vides
-    # Ajout de 'Mode de relève' pour s'assurer qu'il est bien une chaîne
+    # Le traitement de 'Année de fabrication' a déjà été fait, donc je l'ai retiré d'ici.
     df_with_anomalies['Numéro de compteur'] = df_with_anomalies['Numéro de compteur'].astype(str).replace('nan', '', regex=False)
     df_with_anomalies['Numéro de tête'] = df_with_anomalies['Numéro de tête'].astype(str).replace('nan', '', regex=False)
     df_with_anomalies['Marque'] = df_with_anomalies['Marque'].astype(str).replace('nan', '', regex=False)
@@ -87,14 +94,12 @@ def check_data(df):
     # ------------------------------------------------------------------
     
     # Colonnes manquantes
-    # Nouvelle règle de contrôle : ne pas considérer comme une anomalie si le protocole radio est manquant
-    # ET le mode de relève est "Manuelle".
     condition_protocole_manquant = (df_with_anomalies['Protocole Radio'].isin(['', 'nan'])) & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
     df_with_anomalies.loc[condition_protocole_manquant, 'Anomalie'] += 'Protocole Radio manquant / '
     df_with_anomalies.loc[df_with_anomalies['Marque'].isin(['', 'nan']), 'Anomalie'] += 'Marque manquante / '
     df_with_anomalies.loc[df_with_anomalies['Numéro de compteur'].isin(['', 'nan']), 'Anomalie'] += 'Numéro de compteur manquant / '
     df_with_anomalies.loc[df_with_anomalies['Diametre'].isnull(), 'Anomalie'] += 'Diamètre manquant / '
-    df_with_anomalies.loc[annee_fabrication_num.isnull(), 'Anomalie'] += 'Année de fabrication manquante / '
+    df_with_anomalies.loc[df_with_anomalies['Année de fabrication'].isnull(), 'Anomalie'] += 'Année de fabrication manquante / '
     
     # Numéro de tête manquant (sauf pour SAPPEL avec année < 22)
     # ET la nouvelle condition pour "Mode de relève" Manuelle
@@ -104,7 +109,6 @@ def check_data(df):
     df_with_anomalies.loc[condition_tete_manquante, 'Anomalie'] += 'Numéro de tête manquant / '
 
     # Coordonnées
-    # La conversion en numérique ci-dessus résout le TypeError ici
     df_with_anomalies.loc[df_with_anomalies['Latitude'].isnull() | df_with_anomalies['Longitude'].isnull(), 'Anomalie'] += 'Coordonnées GPS non numériques / '
     coord_invalid = ((df_with_anomalies['Latitude'] == 0) | (~df_with_anomalies['Latitude'].between(-90, 90))) | \
                     ((df_with_anomalies['Longitude'] == 0) | (~df_with_anomalies['Longitude'].between(-180, 180)))
@@ -123,7 +127,6 @@ def check_data(df):
     df_with_anomalies.loc[is_kamstrup & (df_with_anomalies['Protocole Radio'].str.upper() != 'WMS'), 'Anomalie'] += 'KAMSTRUP: Protocole ≠ WMS / '
 
     # SAPPEL
-    # Correction: Assurez-vous que la colonne est de type str avant d'appliquer .str.startswith()
     sappel_valid_tete_dme = is_sappel & (df_with_anomalies['Numéro de tête'].astype(str).str.upper().str.startswith('DME'))
     df_with_anomalies.loc[sappel_valid_tete_dme & (df_with_anomalies['Numéro de tête'].str.len() != 15), 'Anomalie'] += 'SAPPEL: Tête DME ≠ 15 caractères / '
     df_with_anomalies.loc[is_sappel & (~df_with_anomalies['Numéro de compteur'].str.match(r'^[A-Z]{1}\d{2}[A-Z]{2}\d{6}$')), 'Anomalie'] += 'SAPPEL: Compteur format incorrect / '
@@ -140,28 +143,23 @@ def check_data(df):
     def check_fp2e_vectorized(row):
         try:
             compteur = row['Numéro de compteur']
-            # Vérifiez que le numéro de compteur est assez long
             if len(compteur) < 5:
                 return False
             
-            # Année de fabrication dans le numéro de compteur (ex: '06')
             annee_compteur = compteur[1:3]
             
-            # Année de fabrication dans la colonne "Année de fabrication"
             annee_fabrication_val = row['Année de fabrication']
-            if pd.isna(annee_fabrication_val):
-                return False
+            if annee_fabrication_val == '':
+                 return False
             
-            # Traitez l'année comme une chaîne et ajoutez un zéro si nécessaire
-            annee_fabrication_str = str(int(annee_fabrication_val)) if pd.notna(annee_fabrication_val) else ''
-            annee_fabrication_padded = annee_fabrication_str.zfill(2)
+            # Utilise directement l'année de fabrication formatée
+            annee_fabrication_padded = annee_fabrication_val
             
-            # Vérification de la correspondance des années
             if annee_compteur != annee_fabrication_padded:
                 return False
             
             lettre_diam = compteur[4].upper()
-            return fp2e_map.get(lettre_diam, None) == row['Diametre']
+            return row['Diametre'] in fp2e_map.get(lettre_diam, []) or (isinstance(fp2e_map.get(lettre_diam), int) and fp2e_map.get(lettre_diam) == row['Diametre'])
         except (TypeError, ValueError, IndexError):
             return False
 
@@ -211,10 +209,8 @@ if uploaded_file is not None:
 
         if file_extension == 'csv':
             delimiter = get_csv_delimiter(uploaded_file)
-            # Lecture du fichier avec la conversion de type pour éviter la notation scientifique
             df = pd.read_csv(uploaded_file, sep=delimiter, dtype=dtype_mapping)
         elif file_extension == 'xlsx':
-            # Lecture du fichier avec la conversion de type pour éviter la notation scientifique
             df = pd.read_excel(uploaded_file, dtype=dtype_mapping)
         else:
             st.error("Format de fichier non pris en charge. Veuillez utiliser un fichier .csv ou .xlsx.")
@@ -246,7 +242,6 @@ if uploaded_file is not None:
                 "Diamètre manquant": ['Diametre'],
                 "Année de fabrication manquante": ['Année de fabrication'],
                 
-                # Anomalies spécifiques
                 "KAMSTRUP: Compteur ≠ 8 caractères": ['Numéro de compteur'],
                 "KAMSTRUP: Compteur ≠ Tête": ['Numéro de compteur', 'Numéro de tête'],
                 "KAMSTRUP: Compteur ou Tête non numérique": ['Numéro de compteur', 'Numéro de tête'],
@@ -273,22 +268,17 @@ if uploaded_file is not None:
             elif file_extension == 'xlsx':
                 excel_buffer = io.BytesIO()
                 
-                # Création d'un classeur Excel
                 wb = Workbook()
                 
-                # Suppression de la première feuille par défaut qui est vide
                 if "Sheet" in wb.sheetnames:
                     wb.remove(wb["Sheet"])
                 
-                # Création de la feuille "Récapitulatif"
                 ws_summary = wb.create_sheet(title="Récapitulatif", index=0)
                 
-                # Ajout de la nouvelle feuille "Toutes les anomalies"
                 ws_all_anomalies = wb.create_sheet(title="Toutes_Anomalies", index=1)
                 for r_df_idx, row_data in enumerate(dataframe_to_rows(anomalies_df, index=False, header=True)):
                     ws_all_anomalies.append(row_data)
 
-                # Mise en forme de la feuille "Toutes les anomalies"
                 header_font = Font(bold=True)
                 red_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid')
 
@@ -309,7 +299,6 @@ if uploaded_file is not None:
                                 except ValueError:
                                     pass
 
-                # Ajuster la largeur des colonnes dans la feuille "Toutes les anomalies"
                 for col in ws_all_anomalies.columns:
                     max_length = 0
                     column = col[0].column
@@ -322,21 +311,18 @@ if uploaded_file is not None:
                     adjusted_width = (max_length + 2)
                     ws_all_anomalies.column_dimensions[get_column_letter(column)].width = adjusted_width
 
-                # Mise en forme pour le titre du résumé
                 title_font = Font(bold=True, size=16)
                 
                 ws_summary['A1'] = "Récapitulatif des anomalies"
                 ws_summary['A1'].font = title_font
                 
-                ws_summary.append([]) # Ligne vide pour la séparation
+                ws_summary.append([])
                 ws_summary.append(["Type d'anomalie", "Nombre de cas"])
                 ws_summary['A3'].font = header_font
                 ws_summary['B3'].font = header_font
                 
-                # Création d'une liste pour stocker les noms de feuilles déjà créées
                 created_sheet_names = set(["Récapitulatif", "Toutes_Anomalies"])
 
-                # Ajouter un lien vers la nouvelle feuille "Toutes les anomalies"
                 row_num_all_anomalies = ws_summary.max_row + 1
                 ws_summary.cell(row=row_num_all_anomalies, column=1, value="Toutes les anomalies").hyperlink = f"#Toutes_Anomalies!A1"
                 ws_summary.cell(row=row_num_all_anomalies, column=1).font = Font(underline="single", color="0563C1")
@@ -344,12 +330,10 @@ if uploaded_file is not None:
                 ws_summary.cell(row=row_num_all_anomalies, column=2).alignment = Alignment(horizontal="right")
                 
                 for r_idx, (anomaly_type, count) in enumerate(anomaly_counter.items()):
-                    # Correction du nettoyage du nom de la feuille et ajout d'une vérification d'unicité
                     sheet_name = re.sub(r'[\\/?*\[\]:()\'"<>|]', '', anomaly_type)
                     sheet_name = sheet_name.replace(' ', '_').replace('.', '').strip()
                     sheet_name = sheet_name[:31]
                     
-                    # S'assurer que le nom de la feuille est unique
                     original_sheet_name = sheet_name
                     counter = 1
                     while sheet_name in created_sheet_names:
@@ -361,16 +345,13 @@ if uploaded_file is not None:
                     ws_summary.cell(row=row_num, column=1, value=anomaly_type)
                     ws_summary.cell(row=row_num, column=2, value=count)
                     
-                    # Création de la feuille pour cette anomalie
                     ws_anomaly_detail = wb.create_sheet(title=sheet_name)
                     
-                    # Écriture des données de l'anomalie dans la feuille dédiée
                     filtered_df = anomalies_df[anomalies_df['Anomalie'].str.contains(anomaly_type, regex=False)]
                     
                     for r_df_idx, row_data in enumerate(dataframe_to_rows(filtered_df, index=False, header=True)):
                         ws_anomaly_detail.append(row_data)
 
-                    # Mise en forme et en couleur de la feuille détaillée
                     for cell in ws_anomaly_detail[1]:
                         cell.font = header_font
                     
@@ -388,7 +369,6 @@ if uploaded_file is not None:
                                     except ValueError:
                                         pass
 
-                    # Ajuster la largeur des colonnes dans la feuille détaillée
                     for col in ws_anomaly_detail.columns:
                         max_length = 0
                         column = col[0].column
@@ -401,11 +381,9 @@ if uploaded_file is not None:
                         adjusted_width = (max_length + 2)
                         ws_anomaly_detail.column_dimensions[get_column_letter(column)].width = adjusted_width
 
-                    # Création du lien vers la feuille détaillée sur la page de résumé
                     ws_summary.cell(row=row_num, column=1).hyperlink = f"#{sheet_name}!A1"
                     ws_summary.cell(row=row_num, column=1).font = Font(underline="single", color="0563C1")
                     
-                # Ajuster la largeur des colonnes dans le résumé
                 for col in ws_summary.columns:
                     max_length = 0
                     column = col[0].column
@@ -417,7 +395,7 @@ if uploaded_file is not None:
                             pass
                     adjusted_width = (max_length + 2)
                     ws_summary.column_dimensions[get_column_letter(column)].width = adjusted_width
-                
+                    
                 excel_buffer_styled = io.BytesIO()
                 wb.save(excel_buffer_styled)
                 excel_buffer_styled.seek(0)
