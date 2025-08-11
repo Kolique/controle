@@ -28,6 +28,16 @@ def check_data(df):
     """
     df_with_anomalies = df.copy()
 
+    # --- NOUVELLE LOGIQUE AJOUTÉE ---
+    # Traitement de la colonne 'Année de fabrication' pour formater les chiffres simples
+    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].astype(str)
+    
+    # Remplacer les valeurs qui sont des nombres à un chiffre par leur version avec un zéro en début
+    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].apply(
+        lambda x: x.zfill(2) if x.isdigit() and len(x) == 1 else x
+    )
+    # --- FIN DE LA NOUVELLE LOGIQUE ---
+
     # Vérification des colonnes requises
     required_columns = ['Protocole Radio', 'Marque', 'Numéro de tête', 'Numéro de compteur', 'Latitude', 'Longitude', 'Commune', 'Année de fabrication', 'Diametre', 'Mode de relève']
     if not all(col in df_with_anomalies.columns for col in required_columns):
@@ -125,14 +135,14 @@ def check_data(df):
             if pd.isna(annee_fabrication_val):
                 return False
             
-            # Correction: Traitez l'année comme une chaîne et ajoutez un zéro si nécessaire
+            # Traitez l'année comme une chaîne et ajoutez un zéro si nécessaire
             annee_fabrication_str = str(int(annee_fabrication_val)) if pd.notna(annee_fabrication_val) else ''
             annee_fabrication_padded = annee_fabrication_str.zfill(2)
-                
+            
             # Vérification de la correspondance des années
             if annee_compteur != annee_fabrication_padded:
                 return False
-                
+            
             lettre_diam = compteur[4].upper()
             return fp2e_map.get(lettre_diam, None) == row['Diametre']
         except (TypeError, ValueError, IndexError):
