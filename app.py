@@ -46,17 +46,17 @@ def check_data(df):
 
     # --- DÉBUT DE LA LOGIQUE CORRIGÉE POUR L'ANNÉE DE FABRICATION ---
     # Convertir d'abord la colonne en chaîne de caractères, en remplacant les valeurs manquantes
+    # Cela permet de traiter les années comme '8' ou '2008' sans erreur.
     df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].astype(str).replace('nan', '', regex=False)
     
-    # Nettoyer spécifiquement les valeurs qui ont le format ".0"
-    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].str.replace(r'\.0$', '', regex=True)
-
-    # Ensuite, ajouter un "0" au début pour les chiffres uniques
-    # On utilise .apply(lambda x: x.zfill(2) if x.isdigit() else x) pour s'assurer
-    # que seules les valeurs numériques sont modifiées et que les chaînes vides ne deviennent pas '00'
+    # Remplacer les valeurs numériques (y compris celles en float comme '8.0') par un format propre
+    # Cette étape est cruciale pour que la transformation en deux chiffres fonctionne bien
     df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].apply(
-        lambda x: x.zfill(2) if x.isdigit() else x
+        lambda x: str(int(float(x))) if x.replace('.', '', 1).isdigit() and x != '' else x
     )
+
+    # Convertir l'année en deux chiffres (ex: '2008' -> '08', '8' -> '08')
+    df_with_anomalies['Année de fabrication'] = df_with_anomalies['Année de fabrication'].str.slice(-2).str.zfill(2)
 
     # --- FIN DE LA LOGIQUE CORRIGÉE ---
     
@@ -134,7 +134,8 @@ def check_data(df):
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
 
     # Règle de diamètre FP2E (pour SAPPEL)
-    fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': 60, 'G': 65, 'H': 80, 'I': 100, 'J': 125, 'K': 150}
+    # Correction de la map pour que la lettre 'G' corresponde à une liste de diamètres
+    fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
 
     # Correction de la fonction check_fp2e_vectorized pour gérer les années à 1 ou 2 chiffres
     def check_fp2e_vectorized(row):
@@ -144,19 +145,25 @@ def check_data(df):
                 return False
             
             annee_compteur = compteur[1:3]
-            
             annee_fabrication_val = row['Année de fabrication']
+
             if annee_fabrication_val == '':
                  return False
-            
-            # Utilise directement l'année de fabrication formatée
+
             annee_fabrication_padded = annee_fabrication_val
             
             if annee_compteur != annee_fabrication_padded:
                 return False
             
             lettre_diam = compteur[4].upper()
-            return row['Diametre'] in fp2e_map.get(lettre_diam, []) or (isinstance(fp2e_map.get(lettre_diam), int) and fp2e_map.get(lettre_diam) == row['Diametre'])
+            
+            expected_diametres = fp2e_map.get(lettre_diam, [])
+            
+            if not isinstance(expected_diametres, list):
+                expected_diametres = [expected_diametres]
+            
+            return row['Diametre'] in expected_diametres
+
         except (TypeError, ValueError, IndexError):
             return False
 
