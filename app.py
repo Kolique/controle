@@ -37,7 +37,7 @@ def get_csv_delimiter(file):
         file.seek(0)
         return ','
     
-# --- Fonction de vérification FP2E ---
+# --- Fonction de vérification FP2E modifiée pour plus de précision ---
 def check_fp2e_details(row):
     """
     Vérifie les détails de la norme FP2E et renvoie une chaîne détaillée
@@ -78,7 +78,6 @@ def check_fp2e_details(row):
 
     except (TypeError, ValueError, IndexError):
         return 'Erreur de format interne'
-
 
 def check_data(df):
     """
@@ -165,12 +164,22 @@ def check_data(df):
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (~df_with_anomalies['Numéro de tête'].astype(str).str.upper().str.startswith('DME')), 'Anomalie'] += 'SAPPEL: Année >22 & Tête ≠ DME / '
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
 
-    # Règle de diamètre FP2E (pour SAPPEL) - Appliquée à TOUS les SAPPEL
-    sappel_fp2e_condition = is_sappel
-                            
-    fp2e_results = df_with_anomalies[sappel_fp2e_condition].apply(check_fp2e_details, axis=1)
+    # ------------------------------------------------------------------
+    # LOGIQUE CORRIGÉE POUR LA NORME FP2E
+    # ------------------------------------------------------------------
     
-    # Ajout des anomalies détaillées à la colonne 'Anomalie Détaillée FP2E'
+    # Condition pour appliquer la vérification FP2E
+    # - Pour les compteurs SAPPEL non-manuels
+    # - OU pour les compteurs manuels qui ont déjà un format FP2E correct
+    fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
+    
+    sappel_non_manuelle = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
+    manuelle_format_ok = (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex))
+    
+    fp2e_check_condition = sappel_non_manuelle | manuelle_format_ok
+    
+    fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
+    
     df_with_anomalies.loc[fp2e_results[fp2e_results != 'Conforme'].index, 'Anomalie Détaillée FP2E'] = fp2e_results[fp2e_results != 'Conforme']
     df_with_anomalies.loc[fp2e_results[fp2e_results != 'Conforme'].index, 'Anomalie'] += 'SAPPEL: non conforme FP2E / '
     
