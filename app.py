@@ -161,7 +161,11 @@ def check_data(df):
     df_with_anomalies.loc[sappel_valid_tete_dme & (df_with_anomalies['Numéro de tête'].str.len() != 15), 'Anomalie'] += 'SAPPEL: Tête DME ≠ 15 caractères / '
     df_with_anomalies.loc[is_sappel & (~df_with_anomalies['Numéro de compteur'].str.match(r'^[A-Z]{1}\d{2}[A-Z]{2}\d{6}$')), 'Anomalie'] += 'SAPPEL: Compteur format incorrect / '
     df_with_anomalies.loc[is_sappel & (~df_with_anomalies['Numéro de compteur'].str.startswith(('C', 'H'))), 'Anomalie'] += 'SAPPEL: Compteur ne commence pas par C ou H / '
+    
+    # --- LOGIQUE CORRIGÉE POUR L'INCOHÉRENCE MARQUE/COMPTEUR (C) ---
     df_with_anomalies.loc[(is_sappel) & (df_with_anomalies['Numéro de compteur'].str.startswith('C')) & (df_with_anomalies['Marque'].str.upper() != 'SAPPEL (C)'), 'Anomalie'] += 'SAPPEL: Incohérence Marque/Compteur (C) / '
+    # --- FIN DE LA LOGIQUE CORRIGÉE ---
+    
     df_with_anomalies.loc[(is_sappel) & (df_with_anomalies['Numéro de compteur'].str.startswith('H')) & (df_with_anomalies['Marque'].str.upper() != 'SAPPEL (H)'), 'Anomalie'] += 'SAPPEL: Incohérence Marque/Compteur (H) / '
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (~df_with_anomalies['Numéro de tête'].astype(str).str.upper().str.startswith('DME')), 'Anomalie'] += 'SAPPEL: Année >22 & Tête ≠ DME / '
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
@@ -240,7 +244,8 @@ if uploaded_file is not None:
             st.dataframe(anomalies_df_display)
             afficher_resume_anomalies(anomaly_counter)
             
-            # Dictionnaire pour mapper les anomalies aux colonnes
+            # --- Dictionnaire pour mapper les anomalies aux colonnes ---
+            # MIS À JOUR pour l'incohérence Marque/Compteur (C)
             anomaly_columns_map = {
                 "Protocole Radio manquant": ['Protocole Radio'],
                 "Marque manquante": ['Marque'],
@@ -259,7 +264,7 @@ if uploaded_file is not None:
                 "SAPPEL: Tête DME ≠ 15 caractères": ['Numéro de tête'],
                 "SAPPEL: Compteur format incorrect": ['Numéro de compteur'],
                 "SAPPEL: Compteur ne commence pas par C ou H": ['Numéro de compteur'],
-                "SAPPEL: Incohérence Marque/Compteur (C)": ['Marque', 'Numéro de compteur'],
+                "SAPPEL: Incohérence Marque/Compteur (C)": ['Numéro de compteur'],
                 "SAPPEL: Incohérence Marque/Compteur (H)": ['Marque', 'Numéro de compteur'],
                 "SAPPEL: Année >22 & Tête ≠ DME": ['Année de fabrication', 'Numéro de tête'],
                 "SAPPEL: Année >22 & Protocole ≠ OMS": ['Année de fabrication', 'Protocole Radio'],
