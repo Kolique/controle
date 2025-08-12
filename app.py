@@ -36,13 +36,15 @@ def get_csv_delimiter(file):
     except Exception:
         file.seek(0)
         return ','
-    
+
 # --- Fonction de vérification FP2E modifiée pour plus de précision ---
 def check_fp2e_details(row):
     """
     Vérifie les détails de la norme FP2E et renvoie une chaîne détaillée
     du problème pour un coloriage précis.
     """
+    anomalies = []
+    
     try:
         compteur = str(row['Numéro de compteur']).strip()
         annee_fabrication_val = str(row['Année de fabrication']).strip()
@@ -51,19 +53,19 @@ def check_fp2e_details(row):
         # Vérification 1 : Format du compteur
         fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
         if not re.match(fp2e_regex, compteur):
-            return 'Format de compteur non FP2E'
+            anomalies.append('Format de compteur non FP2E')
+            return ' / '.join(anomalies)
 
-        # Si le format est bon, on continue les autres vérifications
         annee_compteur = compteur[1:3]
         lettre_diam = compteur[4].upper()
         
         # Vérification 2 : Année de fabrication
         if annee_fabrication_val == '' or not annee_fabrication_val.isdigit():
-            return 'Année fabrication manquante ou invalide'
-        
-        annee_fabrication_padded = annee_fabrication_val.zfill(2)
-        if annee_compteur != annee_fabrication_padded:
-            return 'Année fabrication différente'
+            anomalies.append('Année fabrication manquante ou invalide')
+        else:
+            annee_fabrication_padded = annee_fabrication_val.zfill(2)
+            if annee_compteur != annee_fabrication_padded:
+                anomalies.append('Année fabrication différente')
             
         # Vérification 3 : Diamètre
         fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
@@ -72,12 +74,15 @@ def check_fp2e_details(row):
             expected_diametres = [expected_diametres]
 
         if pd.isna(diametre_val) or diametre_val not in expected_diametres:
-            return 'Diamètre non conforme'
-            
-        return 'Conforme'
+            anomalies.append('Diamètre non conforme')
 
     except (TypeError, ValueError, IndexError):
-        return 'Erreur de format interne'
+        anomalies.append('Erreur de format interne')
+    
+    if not anomalies:
+        return 'Conforme'
+    else:
+        return ' / '.join(anomalies)
 
 def check_data(df):
     """
@@ -171,9 +176,6 @@ def check_data(df):
     # Condition pour appliquer la vérification FP2E
     fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
     
-    # La vérification FP2E s'applique sur les compteurs :
-    # - SAPPEL non-manuels (car ils devraient toujours respecter cette norme)
-    # - OU manuels qui ont déjà un format FP2E correct
     sappel_non_manuelle = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
     manuelle_format_ok = (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
     
@@ -181,10 +183,10 @@ def check_data(df):
     
     fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
     
-    df_with_anomalies.loc[fp2e_results[fp2e_results != 'Conforme'].index, 'Anomalie Détaillée FP2E'] = fp2e_results[fp2e_results != 'Conforme']
-    
-    # Changement de l'intitulé de l'anomalie
-    df_with_anomalies.loc[fp2e_results[fp2e_results != 'Conforme'].index, 'Anomalie'] += 'non conforme FP2E / '
+    # Mise à jour des colonnes d'anomalies
+    has_fp2e_anomalies = fp2e_results[fp2e_results != 'Conforme'].index
+    df_with_anomalies.loc[has_fp2e_anomalies, 'Anomalie Détaillée FP2E'] = fp2e_results[fp2e_results != 'Conforme']
+    df_with_anomalies.loc[has_fp2e_anomalies, 'Anomalie'] += 'non conforme FP2E / '
     
     # Nettoyage de la colonne 'Anomalie'
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
@@ -306,15 +308,16 @@ if uploaded_file is not None:
                     anomalies = str(df_row[1]['Anomalie']).split(' / ')
                     
                     if 'non conforme FP2E' in anomalies:
-                        fp2e_detail = str(df_row[1]['Anomalie Détaillée FP2E'])
-                        if fp2e_detail == 'Année fabrication différente' or fp2e_detail == 'Année fabrication manquante ou invalide':
-                            columns_to_highlight = ['Année de fabrication']
-                        elif fp2e_detail == 'Diamètre non conforme':
-                            columns_to_highlight = ['Diametre']
-                        elif fp2e_detail == 'Format de compteur non FP2E' or fp2e_detail == 'Erreur de format interne':
-                            columns_to_highlight = ['Numéro de compteur']
-                        else:
-                            columns_to_highlight = ['Numéro de compteur', 'Diametre', 'Année de fabrication']
+                        # La colonne 'Anomalie Détaillée FP2E' peut contenir plusieurs anomalies séparées par ' / '
+                        fp2e_details = str(df_row[1]['Anomalie Détaillée FP2E']).split(' / ')
+                        columns_to_highlight = []
+
+                        if 'Année fabrication différente' in fp2e_details or 'Année fabrication manquante ou invalide' in fp2e_details:
+                            columns_to_highlight.append('Année de fabrication')
+                        if 'Diamètre non conforme' in fp2e_details:
+                            columns_to_highlight.append('Diametre')
+                        if 'Format de compteur non FP2E' in fp2e_details or 'Erreur de format interne' in fp2e_details:
+                            columns_to_highlight.append('Numéro de compteur')
                         
                         for col_name in columns_to_highlight:
                             try:
@@ -323,6 +326,7 @@ if uploaded_file is not None:
                                 cell.fill = red_fill
                             except ValueError:
                                 pass
+                        
                         anomalies.remove('non conforme FP2E')
 
                     for anomaly in anomalies:
@@ -402,15 +406,15 @@ if uploaded_file is not None:
                         anomalies = str(df_row[1]['Anomalie']).split(' / ')
 
                         if 'non conforme FP2E' in anomalies:
-                            fp2e_detail = str(df_row[1]['Anomalie Détaillée FP2E'])
-                            if fp2e_detail == 'Année fabrication différente' or fp2e_detail == 'Année fabrication manquante ou invalide':
-                                columns_to_highlight = ['Année de fabrication']
-                            elif fp2e_detail == 'Diamètre non conforme':
-                                columns_to_highlight = ['Diametre']
-                            elif fp2e_detail == 'Format de compteur non FP2E' or fp2e_detail == 'Erreur de format interne':
-                                columns_to_highlight = ['Numéro de compteur']
-                            else:
-                                columns_to_highlight = ['Numéro de compteur', 'Diametre', 'Année de fabrication']
+                            fp2e_details = str(df_row[1]['Anomalie Détaillée FP2E']).split(' / ')
+                            columns_to_highlight = []
+
+                            if 'Année fabrication différente' in fp2e_details or 'Année fabrication manquante ou invalide' in fp2e_details:
+                                columns_to_highlight.append('Année de fabrication')
+                            if 'Diamètre non conforme' in fp2e_details:
+                                columns_to_highlight.append('Diametre')
+                            if 'Format de compteur non FP2E' in fp2e_details or 'Erreur de format interne' in fp2e_details:
+                                columns_to_highlight.append('Numéro de compteur')
                             
                             for col_name in columns_to_highlight:
                                 try:
@@ -419,6 +423,7 @@ if uploaded_file is not None:
                                     cell.fill = red_fill
                                 except ValueError:
                                     pass
+                            
                             anomalies.remove('non conforme FP2E')
 
                         for anomaly in anomalies:
