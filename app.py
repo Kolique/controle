@@ -48,9 +48,9 @@ def check_fp2e_details(row):
         annee_fabrication_val = str(row['Année de fabrication']).strip()
         diametre_val = row['Diametre']
         
-        # Le format FP2E est une lettre, 2 chiffres, 2 lettres, 6 chiffres
-        # La condition initiale était trop permissive. La voici corrigée.
-        # Le re.match r'^[A-Z]\d{2}[A-Z]{2}\d{6}$' est la définition exacte du format FP2E.
+        # Vérifier si le compteur a le bon format pour la vérification FP2E
+        # Cette condition est désormais plus précise pour la norme FP2E
+        # et renvoie une anomalie claire si le format est incorrect.
         if not re.match(r'^[A-Z]\d{2}[A-Z]{2}\d{6}$', compteur):
             return 'Format de compteur non FP2E'
 
@@ -173,10 +173,8 @@ def check_data(df):
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
 
     # Règle de diamètre FP2E (pour SAPPEL) - Utilisation de la nouvelle fonction
-    # On ne fait les vérifications FP2E que si le format du compteur SAPPEL est bon ET si le mode de relève est 'Manuelle'
-    sappel_fp2e_condition = is_sappel & \
-                            (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & \
-                            (df_with_anomalies['Numéro de compteur'].str.match(r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'))
+    # On ne fait les vérifications FP2E que si la marque est SAPPEL et que le mode de relève est 'Manuelle'
+    sappel_fp2e_condition = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE')
                             
     fp2e_results = df_with_anomalies[sappel_fp2e_condition].apply(check_fp2e_details, axis=1)
     
@@ -250,7 +248,7 @@ if uploaded_file is not None:
             afficher_resume_anomalies(anomaly_counter)
             
             # --- Dictionnaire pour mapper les anomalies aux colonnes ---
-            # MIS À JOUR pour l'incohérence Marque/Compteur (C)
+            # MIS À JOUR pour l'incohérence Marque/Compteur (C) et le nouveau format FP2E
             anomaly_columns_map = {
                 "Protocole Radio manquant": ['Protocole Radio'],
                 "Marque manquante": ['Marque'],
@@ -272,6 +270,7 @@ if uploaded_file is not None:
                 "SAPPEL: Incohérence Marque/Compteur (H)": ['Marque', 'Numéro de compteur'],
                 "SAPPEL: Année >22 & Tête ≠ DME": ['Année de fabrication', 'Numéro de tête'],
                 "SAPPEL: Année >22 & Protocole ≠ OMS": ['Année de fabrication', 'Protocole Radio'],
+                "SAPPEL: non conforme FP2E": ['Numéro de compteur', 'Diametre', 'Année de fabrication'],
             }
 
             if file_extension == 'csv':
