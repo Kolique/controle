@@ -169,19 +169,22 @@ def check_data(df):
     # ------------------------------------------------------------------
     
     # Condition pour appliquer la vérification FP2E
-    # - Pour les compteurs SAPPEL non-manuels
-    # - OU pour les compteurs manuels qui ont déjà un format FP2E correct
     fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
     
+    # La vérification FP2E s'applique sur les compteurs :
+    # - SAPPEL non-manuels (car ils devraient toujours respecter cette norme)
+    # - OU manuels qui ont déjà un format FP2E correct
     sappel_non_manuelle = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
-    manuelle_format_ok = (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex))
+    manuelle_format_ok = (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
     
     fp2e_check_condition = sappel_non_manuelle | manuelle_format_ok
     
     fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
     
     df_with_anomalies.loc[fp2e_results[fp2e_results != 'Conforme'].index, 'Anomalie Détaillée FP2E'] = fp2e_results[fp2e_results != 'Conforme']
-    df_with_anomalies.loc[fp2e_results[fp2e_results != 'Conforme'].index, 'Anomalie'] += 'SAPPEL: non conforme FP2E / '
+    
+    # Changement de l'intitulé de l'anomalie
+    df_with_anomalies.loc[fp2e_results[fp2e_results != 'Conforme'].index, 'Anomalie'] += 'non conforme FP2E / '
     
     # Nettoyage de la colonne 'Anomalie'
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
@@ -268,7 +271,7 @@ if uploaded_file is not None:
                 "SAPPEL: Incohérence Marque/Compteur (H)": ['Marque', 'Numéro de compteur'],
                 "SAPPEL: Année >22 & Tête ≠ DME": ['Année de fabrication', 'Numéro de tête'],
                 "SAPPEL: Année >22 & Protocole ≠ OMS": ['Année de fabrication', 'Protocole Radio'],
-                "SAPPEL: non conforme FP2E": ['Numéro de compteur', 'Diametre', 'Année de fabrication'],
+                "non conforme FP2E": ['Numéro de compteur', 'Diametre', 'Année de fabrication'],
             }
 
             if file_extension == 'csv':
@@ -302,7 +305,7 @@ if uploaded_file is not None:
                 for row_num_all, df_row in enumerate(anomalies_df.iterrows()):
                     anomalies = str(df_row[1]['Anomalie']).split(' / ')
                     
-                    if 'SAPPEL: non conforme FP2E' in anomalies:
+                    if 'non conforme FP2E' in anomalies:
                         fp2e_detail = str(df_row[1]['Anomalie Détaillée FP2E'])
                         if fp2e_detail == 'Année fabrication différente' or fp2e_detail == 'Année fabrication manquante ou invalide':
                             columns_to_highlight = ['Année de fabrication']
@@ -320,7 +323,7 @@ if uploaded_file is not None:
                                 cell.fill = red_fill
                             except ValueError:
                                 pass
-                        anomalies.remove('SAPPEL: non conforme FP2E')
+                        anomalies.remove('non conforme FP2E')
 
                     for anomaly in anomalies:
                         anomaly_key = anomaly.strip()
@@ -365,9 +368,14 @@ if uploaded_file is not None:
                 ws_summary.cell(row=row_num_all_anomalies, column=2).alignment = Alignment(horizontal="right")
                 
                 for r_idx, (anomaly_type, count) in enumerate(anomaly_counter.items()):
-                    sheet_name = re.sub(r'[\\/?*\[\]:()\'"<>|]', '', anomaly_type)
+                    # Logique pour raccourcir le nom de la feuille
+                    if len(anomaly_type) > 28:
+                        sheet_name_base = anomaly_type[:28]
+                    else:
+                        sheet_name_base = anomaly_type
+                    
+                    sheet_name = re.sub(r'[\\/?*\[\]:()\'"<>|]', '', sheet_name_base)
                     sheet_name = sheet_name.replace(' ', '_').replace('.', '').strip()
-                    sheet_name = sheet_name[:31]
                     
                     original_sheet_name = sheet_name
                     counter = 1
@@ -393,7 +401,7 @@ if uploaded_file is not None:
                     for row_num_detail, df_row in enumerate(filtered_df.iterrows()):
                         anomalies = str(df_row[1]['Anomalie']).split(' / ')
 
-                        if 'SAPPEL: non conforme FP2E' in anomalies:
+                        if 'non conforme FP2E' in anomalies:
                             fp2e_detail = str(df_row[1]['Anomalie Détaillée FP2E'])
                             if fp2e_detail == 'Année fabrication différente' or fp2e_detail == 'Année fabrication manquante ou invalide':
                                 columns_to_highlight = ['Année de fabrication']
@@ -411,7 +419,7 @@ if uploaded_file is not None:
                                     cell.fill = red_fill
                                 except ValueError:
                                     pass
-                            anomalies.remove('SAPPEL: non conforme FP2E')
+                            anomalies.remove('non conforme FP2E')
 
                         for anomaly in anomalies:
                             anomaly_key = anomaly.strip()
