@@ -171,7 +171,7 @@ def check_data(df):
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
 
     # ------------------------------------------------------------------
-    # LOGIQUE POUR LES COMPTEURS MANUELS (ITRON/SAPPEL) FP2E
+    # NOUVELLE LOGIQUE POUR LES COMPTEURS MANUELS (ITRON/SAPPEL) FP2E
     # ------------------------------------------------------------------
     fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
 
@@ -197,15 +197,11 @@ def check_data(df):
 
 
     # ------------------------------------------------------------------
-    # LOGIQUE MISE À JOUR POUR LA NORME FP2E
+    # LOGIQUE MISE À JOUR POUR LA NORME FP2E (APPLIQUÉE À TOUS LES CAS)
     # ------------------------------------------------------------------
     
-    # Condition pour appliquer la vérification FP2E
-    fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
-    fp2e_check_condition = (is_itron | is_sappel) & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE') | \
-                           (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
-    
-    fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
+    # Appliquer la vérification FP2E sur toutes les lignes
+    fp2e_results = df_with_anomalies.apply(check_fp2e_details, axis=1)
     
     # Remplacement de l'anomalie générale par des anomalies spécifiques
     has_fp2e_anomalies = fp2e_results[fp2e_results != 'Conforme'].index
@@ -309,7 +305,7 @@ if uploaded_file is not None:
                 "Manuelle ITRON: Compteur ne commence pas par I ou D": ['Numéro de compteur'],
                 "Manuelle SAPPEL: Compteur ne commence pas par C ou H": ['Numéro de compteur'],
                 "Diametre non conforme": ['Diametre'],
-                "Annee millesime non conforme": ['Numéro de compteur', 'Année de fabrication'],
+                "Annee millesime non conforme": ['Année de fabrication'],
                 "Format de compteur FP2E invalide": ['Numéro de compteur'],
             }
 
