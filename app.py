@@ -172,10 +172,10 @@ def check_data(df):
     fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
 
     # 1. Vérification du format FP2E pour les compteurs pertinents
-    fp2e_check_condition = is_manual | is_itron | is_sappel
+    fp2e_check_condition = (~is_manual & (is_itron | is_sappel))
     fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
 
-    # 2. Répartition des anomalies détaillées
+    # 2. Répartition des anomalies détaillées pour les non-manuels
     has_fp2e_anomalies = fp2e_results[fp2e_results != 'Conforme'].index
     for index in has_fp2e_anomalies:
         details = fp2e_results.loc[index]
@@ -186,15 +186,16 @@ def check_data(df):
         if 'Format de compteur non FP2E' in details:
             df_with_anomalies.loc[index, 'Anomalie'] += 'Format de compteur FP2E invalide / '
 
-    # 3. Vérification des préfixes, en fonction du mode de relève et de la conformité FP2E
+    # GESTION DES PRÉFIXES DE COMPTEURS (C/H ou I/D)
     
     # Pour les compteurs Manuels (ITRON ou SAPPEL)
-    condition_manual_itron_or_sappel_valid_fp2e = is_manual & (is_itron | is_sappel) & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
+    # On vérifie si le format est FP2E ET que le préfixe est correct
+    condition_manual_valid_fp2e = is_manual & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
     
-    condition_itron_manual_prefix = condition_manual_itron_or_sappel_valid_fp2e & is_itron & (~df_with_anomalies['Numéro de compteur'].str.upper().str.startswith(('I', 'D'), na=False))
+    condition_itron_manual_prefix = condition_manual_valid_fp2e & is_itron & (~df_with_anomalies['Numéro de compteur'].str.upper().str.startswith(('I', 'D'), na=False))
     df_with_anomalies.loc[condition_itron_manual_prefix, 'Anomalie'] += 'Manuelle ITRON: Compteur ne commence pas par I ou D / '
 
-    condition_sappel_manual_prefix = condition_manual_itron_or_sappel_valid_fp2e & is_sappel & (~df_with_anomalies['Numéro de compteur'].str.upper().str.startswith(('C', 'H'), na=False))
+    condition_sappel_manual_prefix = condition_manual_valid_fp2e & is_sappel & (~df_with_anomalies['Numéro de compteur'].str.upper().str.startswith(('C', 'H'), na=False))
     df_with_anomalies.loc[condition_sappel_manual_prefix, 'Anomalie'] += 'Manuelle SAPPEL: Compteur ne commence pas par C ou H / '
     
     # Pour les SAPPEL non-manuels (la vérification du préfixe est toujours requise pour cette marque)
