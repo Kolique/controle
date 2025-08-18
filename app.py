@@ -171,16 +171,20 @@ def check_data(df):
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
 
     # ------------------------------------------------------------------
-    # NOUVELLE LOGIQUE POUR LES COMPTEURS MANUELS (ITRON/SAPPEL) FP2E
+    # LOGIQUE POUR LES COMPTEURS MANUELS (ITRON/SAPPEL) FP2E
     # ------------------------------------------------------------------
-    # Condition pour appliquer la règle "Compteur commence par I ou D"
-    condition_manuel_fp2e = (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & \
-                            (df_with_anomalies['Marque'].str.upper().isin(['ITRON', 'SAPPEL (H)', 'SAPPEL (C)'])) & \
-                            (df_with_anomalies['Numéro de compteur'].str.match(r'^[A-Z]\d{2}[A-Z]{2}\d{6}$', na=False))
-                            
-    condition_compteur_manque_ID = condition_manuel_fp2e & \
-                                   (~df_with_anomalies['Numéro de compteur'].str.upper().str.startswith(('I', 'D'), na=False))
-    df_with_anomalies.loc[condition_compteur_manque_ID, 'Anomalie'] += 'Manuelle: Compteur ne commence pas par I ou D / '
+    fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
+
+    # J'ai isolé la condition pour être plus clair
+    est_manuel_itron_sappel = df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE' & \
+                              df_with_anomalies['Marque'].str.upper().isin(['ITRON', 'SAPPEL (H)', 'SAPPEL (C)'])
+    
+    # La condition de vérification ne s'applique QUE SI le format FP2E est respecté
+    condition_compteur_id_manquant = est_manuel_itron_sappel & \
+                                     (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False)) & \
+                                     (~df_with_anomalies['Numéro de compteur'].str.upper().str.startswith(('I', 'D'), na=False))
+    
+    df_with_anomalies.loc[condition_compteur_id_manquant, 'Anomalie'] += 'Manuelle: Compteur ne commence pas par I ou D / '
 
 
     # ------------------------------------------------------------------
@@ -188,15 +192,6 @@ def check_data(df):
     # ------------------------------------------------------------------
     
     # Condition pour appliquer la vérification FP2E
-    fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
-    
-    # Ancien comportement (SAPPEL non manuelle)
-    sappel_non_manuelle = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
-    # Ancien comportement (Manuelle avec format OK) - NOTE: Ce n'est plus la règle demandée
-    # Remplacé par une application plus spécifique de la règle 'FP2E'
-    # La logique FP2E est maintenant une vérification plus large qui inclut les cas ITTRON/SAPPEL non manuels
-    # Pour le reste, on garde la même logique qu'avant.
-    
     fp2e_check_condition = (is_itron | is_sappel) & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE') | \
                            (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
     
