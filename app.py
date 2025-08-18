@@ -171,8 +171,7 @@ def check_data(df):
     # ------------------------------------------------------------------
     fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
 
-    # Vérification FP2E pour les compteurs non manuels (ITRON ou SAPPEL)
-    # L'anomalie de format FP2E n'est pas pertinente pour les compteurs manuels
+    # Vérification FP2E pour les compteurs non manuels
     fp2e_check_condition = (~is_manual) & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
     fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
 
