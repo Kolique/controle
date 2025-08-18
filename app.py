@@ -197,11 +197,16 @@ def check_data(df):
 
 
     # ------------------------------------------------------------------
-    # LOGIQUE MISE À JOUR POUR LA NORME FP2E (APPLIQUÉE À TOUS LES CAS)
+    # LOGIQUE MISE À JOUR POUR LA NORME FP2E
     # ------------------------------------------------------------------
     
-    # Appliquer la vérification FP2E sur toutes les lignes
-    fp2e_results = df_with_anomalies.apply(check_fp2e_details, axis=1)
+    # Condition pour appliquer la vérification FP2E
+    fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
+    
+    # On applique le contrôle FP2E uniquement aux compteurs Manuels ou ITRON/SAPPEL non manuels
+    fp2e_check_condition = (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') | (is_itron | is_sappel)
+    
+    fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
     
     # Remplacement de l'anomalie générale par des anomalies spécifiques
     has_fp2e_anomalies = fp2e_results[fp2e_results != 'Conforme'].index
