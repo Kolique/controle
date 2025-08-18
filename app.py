@@ -65,7 +65,7 @@ def check_fp2e_details(row):
         else:
             annee_fabrication_padded = annee_fabrication_val.zfill(2)
             if annee_compteur != annee_fabrication_padded:
-                anomalies.append('Année millésime non conforme FP2E')
+                anomalies.append('Année fabrication différente')
             
         # Vérification 3 : Diamètre
         fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
@@ -74,7 +74,7 @@ def check_fp2e_details(row):
             expected_diametres = [expected_diametres]
 
         if pd.isna(diametre_val) or diametre_val not in expected_diametres:
-            anomalies.append('Diamètre non conforme FP2E')
+            anomalies.append('Diamètre non conforme')
 
     except (TypeError, ValueError, IndexError):
         anomalies.append('Erreur de format interne')
@@ -122,10 +122,6 @@ def check_data(df):
     is_kamstrup = df_with_anomalies['Marque'].str.upper() == 'KAMSTRUP'
     is_sappel = df_with_anomalies['Marque'].str.upper().isin(['SAPPEL (C)', 'SAPPEL (H)'])
     is_itron = df_with_anomalies['Marque'].str.upper() == 'ITRON'
-    is_kaifa = df_with_anomalies['Marque'].str.upper() == 'KAIFA'
-    is_mode_manuelle = df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE'
-    is_mode_radiorel = df_with_anomalies['Mode de relève'].str.upper() == 'RADIORELEVE'
-
     annee_fabrication_num = pd.to_numeric(df_with_anomalies['Année de fabrication'], errors='coerce')
     df_with_anomalies['Diametre'] = pd.to_numeric(df_with_anomalies['Diametre'], errors='coerce')
 
@@ -133,14 +129,16 @@ def check_data(df):
     # ANOMALIES GÉNÉRALES
     # ------------------------------------------------------------------
     
-    condition_protocole_manquant = (df_with_anomalies['Protocole Radio'].isin(['', 'nan'])) & (~is_mode_manuelle)
+    condition_protocole_manquant = (df_with_anomalies['Protocole Radio'].isin(['', 'nan'])) & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
     df_with_anomalies.loc[condition_protocole_manquant, 'Anomalie'] += 'Protocole Radio manquant / '
     df_with_anomalies.loc[df_with_anomalies['Marque'].isin(['', 'nan']), 'Anomalie'] += 'Marque manquante / '
     df_with_anomalies.loc[df_with_anomalies['Numéro de compteur'].isin(['', 'nan']), 'Anomalie'] += 'Numéro de compteur manquant / '
     df_with_anomalies.loc[df_with_anomalies['Diametre'].isnull(), 'Anomalie'] += 'Diamètre manquant / '
-    df_with_anomalies.loc[annee_fabrication_num.isnull(), 'Anomalie'] += 'Année de fabrication manquante / '
-
-    condition_tete_manquante = (df_with_anomalies['Numéro de tête'].isin(['', 'nan'])) & (~is_kamstrup) & (~is_kaifa) & (~is_mode_manuelle)
+    df_with_anomalies.loc[df_with_anomalies['Année de fabrication'].isnull(), 'Anomalie'] += 'Année de fabrication manquante / '
+    
+    condition_tete_manquante = (df_with_anomalies['Numéro de tête'].isin(['', 'nan'])) & \
+        (~is_sappel | (annee_fabrication_num >= 22)) & \
+        (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
     df_with_anomalies.loc[condition_tete_manquante, 'Anomalie'] += 'Numéro de tête manquant / '
 
     df_with_anomalies.loc[df_with_anomalies['Latitude'].isnull() | df_with_anomalies['Longitude'].isnull(), 'Anomalie'] += 'Coordonnées GPS non numériques / '
@@ -164,15 +162,27 @@ def check_data(df):
     sappel_valid_tete_dme = is_sappel & (df_with_anomalies['Numéro de tête'].astype(str).str.upper().str.startswith('DME'))
     df_with_anomalies.loc[sappel_valid_tete_dme & (df_with_anomalies['Numéro de tête'].str.len() != 15), 'Anomalie'] += 'SAPPEL: Tête DME ≠ 15 caractères / '
     
-    # Correction : La règle "ne commence pas par C ou H" s'applique uniquement si le mode est manuel et que le format FP2E est respecté.
-    # L'ancienne règle a été supprimée car elle est gérée par les nouvelles logiques FP2E ci-dessous.
+    df_with_anomalies.loc[is_sappel & (~df_with_anomalies['Numéro de compteur'].str.startswith(('C', 'H'))), 'Anomalie'] += 'SAPPEL: Compteur ne commence pas par C ou H / '
     
     df_with_anomalies.loc[(is_sappel) & (df_with_anomalies['Numéro de compteur'].str.startswith('C')) & (df_with_anomalies['Marque'].str.upper() != 'SAPPEL (C)'), 'Anomalie'] += 'SAPPEL: Incohérence Marque/Compteur (C) / '
     
     df_with_anomalies.loc[(is_sappel) & (df_with_anomalies['Numéro de compteur'].str.startswith('H')) & (df_with_anomalies['Marque'].str.upper() != 'SAPPEL (H)'), 'Anomalie'] += 'SAPPEL: Incohérence Marque/Compteur (H) / '
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (~df_with_anomalies['Numéro de tête'].astype(str).str.upper().str.startswith('DME')), 'Anomalie'] += 'SAPPEL: Année >22 & Tête ≠ DME / '
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
-    
+
+    # ------------------------------------------------------------------
+    # NOUVELLE LOGIQUE POUR LES COMPTEURS MANUELS (ITRON/SAPPEL) FP2E
+    # ------------------------------------------------------------------
+    # Condition pour appliquer la règle "Compteur commence par I ou D"
+    condition_manuel_fp2e = (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & \
+                            (df_with_anomalies['Marque'].str.upper().isin(['ITRON', 'SAPPEL (H)', 'SAPPEL (C)'])) & \
+                            (df_with_anomalies['Numéro de compteur'].str.match(r'^[A-Z]\d{2}[A-Z]{2}\d{6}$', na=False))
+                            
+    condition_compteur_manque_ID = condition_manuel_fp2e & \
+                                   (~df_with_anomalies['Numéro de compteur'].str.upper().str.startswith(('I', 'D'), na=False))
+    df_with_anomalies.loc[condition_compteur_manque_ID, 'Anomalie'] += 'Manuelle: Compteur ne commence pas par I ou D / '
+
+
     # ------------------------------------------------------------------
     # LOGIQUE CORRIGÉE POUR LA NORME FP2E
     # ------------------------------------------------------------------
@@ -180,55 +190,23 @@ def check_data(df):
     # Condition pour appliquer la vérification FP2E
     fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
     
-    # 1. Vérification des compteurs SAPPEL/ITRON qui ne sont PAS en mode manuel
-    #    ET qui suivent le format FP2E
-    fp2e_check_condition_non_manuelle = (is_sappel | is_itron) & (~is_mode_manuelle) & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
+    # Ancien comportement (SAPPEL non manuelle)
+    sappel_non_manuelle = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
+    # Ancien comportement (Manuelle avec format OK) - NOTE: Ce n'est plus la règle demandée
+    # Remplacé par une application plus spécifique de la règle 'FP2E'
+    # La logique FP2E est maintenant une vérification plus large qui inclut les cas ITTRON/SAPPEL non manuels
+    # Pour le reste, on garde la même logique qu'avant.
     
-    fp2e_results_non_manuelle = df_with_anomalies[fp2e_check_condition_non_manuelle].apply(check_fp2e_details, axis=1)
-
-    for index, result in fp2e_results_non_manuelle.items():
-        if 'Format de compteur non FP2E' in result:
-            df_with_anomalies.loc[index, 'Anomalie'] += 'Numéro de compteur non conforme FP2E / '
-        if 'Année fabrication manquante ou invalide' in result:
-            df_with_anomalies.loc[index, 'Anomalie'] += 'Année de fabrication manquante ou invalide / '
-        if 'Année millésime non conforme FP2E' in result:
-            df_with_anomalies.loc[index, 'Anomalie'] += 'Année millésime non conforme FP2E / '
-        if 'Diamètre non conforme FP2E' in result:
-            df_with_anomalies.loc[index, 'Anomalie'] += 'Diamètre non conforme FP2E / '
-
-    # 2. Vérification des compteurs qui sont en mode manuel
-    #    On doit d'abord vérifier le format FP2E de base.
-    is_fp2e_compliant_manuelle = is_mode_manuelle & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
+    fp2e_check_condition = (is_itron | is_sappel) & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE') | \
+                           (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
     
-    # On applique la vérification détaillée FP2E sur le sous-ensemble de compteurs manuels conformes au format FP2E
-    fp2e_results_manuelle = df_with_anomalies[is_fp2e_compliant_manuelle].apply(check_fp2e_details, axis=1)
+    fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
     
-    # Mise à jour des anomalies pour le mode "Manuelle"
-    for index, result in fp2e_results_manuelle.items():
-        if 'Format de compteur non FP2E' in result:
-            df_with_anomalies.loc[index, 'Anomalie'] += 'Numéro de compteur non conforme FP2E / '
-        if 'Année fabrication manquante ou invalide' in result:
-            df_with_anomalies.loc[index, 'Anomalie'] += 'Année de fabrication manquante ou invalide / '
-        if 'Année millésime non conforme FP2E' in result:
-            df_with_anomalies.loc[index, 'Anomalie'] += 'Année millésime non conforme FP2E / '
-        if 'Diamètre non conforme FP2E' in result:
-            df_with_anomalies.loc[index, 'Anomalie'] += 'Diamètre non conforme FP2E / '
-            
-    # Et on gère l'anomalie pour ceux qui ne respectent pas le format de base
-    df_with_anomalies.loc[is_mode_manuelle & (~df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False)), 'Anomalie'] += 'Numéro de compteur non conforme FP2E / '
-
-    # ------------------------------------------------------------------
-    # LOGIQUE ITRON ET SAPPEL POUR LES COMPTEURS FP2E
-    # ------------------------------------------------------------------
+    # Mise à jour des colonnes d'anomalies
+    has_fp2e_anomalies = fp2e_results[fp2e_results != 'Conforme'].index
+    df_with_anomalies.loc[has_fp2e_anomalies, 'Anomalie Détaillée FP2E'] = fp2e_results[fp2e_results != 'Conforme']
+    df_with_anomalies.loc[has_fp2e_anomalies, 'Anomalie'] += 'non conforme FP2E / '
     
-    # On applique la règle ITRON UNIQUEMENT si la marque est ITRON et le format FP2E est respecté (qu'il soit manuel ou non)
-    itron_fp2e_condition = is_itron & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
-    df_with_anomalies.loc[itron_fp2e_condition & (~df_with_anomalies['Numéro de compteur'].str.lower().str.startswith(('i', 'd'), na=False)), 'Anomalie'] += 'ITRON: Compteur FP2E doit commencer par "I" ou "D" / '
-    
-    # On applique la règle SAPPEL UNIQUEMENT si la marque est SAPPEL et le format FP2E est respecté (qu'il soit manuel ou non)
-    sappel_fp2e_condition = is_sappel & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
-    df_with_anomalies.loc[sappel_fp2e_condition & (~df_with_anomalies['Numéro de compteur'].str.lower().str.startswith(('c', 'h'), na=False)), 'Anomalie'] += 'SAPPEL: Compteur FP2E doit commencer par "C" ou "H" / '
-
     # Nettoyage de la colonne 'Anomalie'
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
     
@@ -241,7 +219,6 @@ def check_data(df):
     
     return anomalies_df, anomaly_counter
 
-
 def afficher_resume_anomalies(anomaly_counter):
     """
     Affiche un résumé des anomalies.
@@ -251,7 +228,6 @@ def afficher_resume_anomalies(anomaly_counter):
         summary_df.columns = ["Type d'anomalie", "Nombre de cas"]
         st.subheader("Récapitulatif des anomalies")
         st.dataframe(summary_df)
-
 
 # --- Interface Streamlit ---
 st.title("Contrôle des données de Radiorelève")
@@ -311,17 +287,13 @@ if uploaded_file is not None:
                 "KAMSTRUP: Diamètre hors plage": ['Diametre'],
                 "KAMSTRUP: Protocole ≠ WMS": ['Protocole Radio'],
                 "SAPPEL: Tête DME ≠ 15 caractères": ['Numéro de tête'],
-                "SAPPEL: Compteur non FP2E ne commence pas par C ou H": ['Numéro de compteur'],
+                "SAPPEL: Compteur ne commence pas par C ou H": ['Numéro de compteur'],
                 "SAPPEL: Incohérence Marque/Compteur (C)": ['Numéro de compteur'],
                 "SAPPEL: Incohérence Marque/Compteur (H)": ['Marque', 'Numéro de compteur'],
                 "SAPPEL: Année >22 & Tête ≠ DME": ['Année de fabrication', 'Numéro de tête'],
                 "SAPPEL: Année >22 & Protocole ≠ OMS": ['Année de fabrication', 'Protocole Radio'],
-                "Numéro de compteur non conforme FP2E": ['Numéro de compteur'],
-                "Année de fabrication manquante ou invalide": ['Année de fabrication'],
-                "Année millésime non conforme FP2E": ['Numéro de compteur', 'Année de fabrication'],
-                "Diamètre non conforme FP2E": ['Numéro de compteur', 'Diametre'],
-                "ITRON: Compteur FP2E doit commencer par \"I\" ou \"D\"": ['Numéro de compteur'],
-                "SAPPEL: Compteur FP2E doit commencer par \"C\" ou \"H\"": ['Numéro de compteur'],
+                "Manuelle: Compteur ne commence pas par I ou D": ['Numéro de compteur'],
+                "non conforme FP2E": ['Numéro de compteur', 'Diametre', 'Année de fabrication'],
             }
 
             if file_extension == 'csv':
@@ -355,39 +327,28 @@ if uploaded_file is not None:
                 for row_num_all, df_row in enumerate(anomalies_df.iterrows()):
                     anomalies = str(df_row[1]['Anomalie']).split(' / ')
                     
-                    if 'Numéro de compteur non conforme FP2E' in anomalies:
-                        try:
-                            col_index = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
-                            cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
-                            cell.fill = red_fill
-                        except ValueError:
-                            pass
-                        if 'Numéro de compteur non conforme FP2E' in anomalies:
-                            anomalies.remove('Numéro de compteur non conforme FP2E')
-                    
-                    if 'Année millésime non conforme FP2E' in anomalies:
-                        try:
-                            col_index_compteur = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
-                            col_index_annee = list(anomalies_df_display.columns).index('Année de fabrication') + 1
-                            ws_all_anomalies.cell(row=row_num_all + 2, column=col_index_compteur).fill = red_fill
-                            ws_all_anomalies.cell(row=row_num_all + 2, column=col_index_annee).fill = red_fill
-                        except ValueError:
-                            pass
-                        if 'Année millésime non conforme FP2E' in anomalies:
-                            anomalies.remove('Année millésime non conforme FP2E')
-                    
-                    if 'Diamètre non conforme FP2E' in anomalies:
-                        try:
-                            col_index_compteur = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
-                            col_index_diametre = list(anomalies_df_display.columns).index('Diametre') + 1
-                            ws_all_anomalies.cell(row=row_num_all + 2, column=col_index_compteur).fill = red_fill
-                            ws_all_anomalies.cell(row=row_num_all + 2, column=col_index_diametre).fill = red_fill
-                        except ValueError:
-                            pass
-                        if 'Diamètre non conforme FP2E' in anomalies:
-                            anomalies.remove('Diamètre non conforme FP2E')
+                    if 'non conforme FP2E' in anomalies:
+                        # La colonne 'Anomalie Détaillée FP2E' peut contenir plusieurs anomalies séparées par ' / '
+                        fp2e_details = str(df_row[1]['Anomalie Détaillée FP2E']).split(' / ')
+                        columns_to_highlight = []
 
-                    # Autres anomalies
+                        if 'Année fabrication différente' in fp2e_details or 'Année fabrication manquante ou invalide' in fp2e_details:
+                            columns_to_highlight.append('Année de fabrication')
+                        if 'Diamètre non conforme' in fp2e_details:
+                            columns_to_highlight.append('Diametre')
+                        if 'Format de compteur non FP2E' in fp2e_details or 'Erreur de format interne' in fp2e_details:
+                            columns_to_highlight.append('Numéro de compteur')
+                        
+                        for col_name in columns_to_highlight:
+                            try:
+                                col_index = list(anomalies_df_display.columns).index(col_name) + 1
+                                cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
+                                cell.fill = red_fill
+                            except ValueError:
+                                pass
+                        
+                        anomalies.remove('non conforme FP2E')
+
                     for anomaly in anomalies:
                         anomaly_key = anomaly.strip()
                         if anomaly_key in anomaly_columns_map:
@@ -431,11 +392,14 @@ if uploaded_file is not None:
                 ws_summary.cell(row=row_num_all_anomalies, column=2).alignment = Alignment(horizontal="right")
                 
                 for r_idx, (anomaly_type, count) in enumerate(anomaly_counter.items()):
-                    sheet_name_base = anomaly_type
+                    # Logique pour raccourcir le nom de la feuille
+                    if len(anomaly_type) > 28:
+                        sheet_name_base = anomaly_type[:28]
+                    else:
+                        sheet_name_base = anomaly_type
+                    
                     sheet_name = re.sub(r'[\\/?*\[\]:()\'"<>|]', '', sheet_name_base)
-                    sheet_name = sheet_name.replace(' ', '_').replace('.', '').replace(':', '_').strip()
-                    if len(sheet_name) > 31:
-                        sheet_name = sheet_name[:31].rstrip('_').strip()
+                    sheet_name = sheet_name.replace(' ', '_').replace('.', '').strip()
                     
                     original_sheet_name = sheet_name
                     counter = 1
@@ -461,39 +425,27 @@ if uploaded_file is not None:
                     for row_num_detail, df_row in enumerate(filtered_df.iterrows()):
                         anomalies = str(df_row[1]['Anomalie']).split(' / ')
 
-                        if 'Numéro de compteur non conforme FP2E' in anomalies:
-                            try:
-                                col_index = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
-                                cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
-                                cell.fill = red_fill
-                            except ValueError:
-                                pass
-                            if 'Numéro de compteur non conforme FP2E' in anomalies:
-                                anomalies.remove('Numéro de compteur non conforme FP2E')
-                        
-                        if 'Année millésime non conforme FP2E' in anomalies:
-                            try:
-                                col_index_compteur = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
-                                col_index_annee = list(anomalies_df_display.columns).index('Année de fabrication') + 1
-                                ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index_compteur).fill = red_fill
-                                ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index_annee).fill = red_fill
-                            except ValueError:
-                                pass
-                            if 'Année millésime non conforme FP2E' in anomalies:
-                                anomalies.remove('Année millésime non conforme FP2E')
-                        
-                        if 'Diamètre non conforme FP2E' in anomalies:
-                            try:
-                                col_index_compteur = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
-                                col_index_diametre = list(anomalies_df_display.columns).index('Diametre') + 1
-                                ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index_compteur).fill = red_fill
-                                ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index_diametre).fill = red_fill
-                            except ValueError:
-                                pass
-                            if 'Diamètre non conforme FP2E' in anomalies:
-                                anomalies.remove('Diamètre non conforme FP2E')
+                        if 'non conforme FP2E' in anomalies:
+                            fp2e_details = str(df_row[1]['Anomalie Détaillée FP2E']).split(' / ')
+                            columns_to_highlight = []
 
-                        # Other anomalies
+                            if 'Année fabrication différente' in fp2e_details or 'Année fabrication manquante ou invalide' in fp2e_details:
+                                columns_to_highlight.append('Année de fabrication')
+                            if 'Diamètre non conforme' in fp2e_details:
+                                columns_to_highlight.append('Diametre')
+                            if 'Format de compteur non FP2E' in fp2e_details or 'Erreur de format interne' in fp2e_details:
+                                columns_to_highlight.append('Numéro de compteur')
+                            
+                            for col_name in columns_to_highlight:
+                                try:
+                                    col_index = list(anomalies_df_display.columns).index(col_name) + 1
+                                    cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
+                                    cell.fill = red_fill
+                                except ValueError:
+                                    pass
+                            
+                            anomalies.remove('non conforme FP2E')
+
                         for anomaly in anomalies:
                             anomaly_key = anomaly.strip()
                             if anomaly_key in anomaly_columns_map:
@@ -518,7 +470,7 @@ if uploaded_file is not None:
                         adjusted_width = (max_length + 2)
                         ws_anomaly_detail.column_dimensions[get_column_letter(column)].width = adjusted_width
 
-                    ws_summary.cell(row=row_num, column=1).hyperlink = f"#'{sheet_name}'!A1"
+                    ws_summary.cell(row=row_num, column=1).hyperlink = f"#{sheet_name}!A1"
                     ws_summary.cell(row=row_num, column=1).font = Font(underline="single", color="0563C1")
                     
                 for col in ws_summary.columns:
