@@ -444,4 +444,3 @@ if uploaded_file is not None:
                 )
         else:
             st.success("Aucune anomalie détectée. Les données sont conformes.")
-            
