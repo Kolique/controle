@@ -41,7 +41,7 @@ def get_csv_delimiter(file):
 def check_fp2e_details(row):
     """
     Vérifie les détails de la norme FP2E et renvoie une chaîne détaillée
-    du problème pour un coloriage précis.
+    du problème.
     """
     anomalies = []
     
@@ -53,31 +53,41 @@ def check_fp2e_details(row):
         # Vérification 1 : Format du compteur
         fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
         if not re.match(fp2e_regex, compteur):
-            anomalies.append('Format de compteur non FP2E')
+            anomalies.append('Le numéro de compteur n\'est pas conforme')
             return ' / '.join(anomalies)
 
         annee_compteur = compteur[1:3]
         lettre_diam = compteur[4].upper()
         
         # Vérification 2 : Année de fabrication
+        annee_non_conforme = False
         if annee_fabrication_val == '' or not annee_fabrication_val.isdigit():
-            anomalies.append('Année fabrication manquante ou invalide')
+            anomalies.append('L\'année de millésime n\'est pas conforme')
+            annee_non_conforme = True
         else:
             annee_fabrication_padded = annee_fabrication_val.zfill(2)
             if annee_compteur != annee_fabrication_padded:
-                anomalies.append('Année fabrication différente')
-            
+                anomalies.append('L\'année de millésime n\'est pas conforme')
+                annee_non_conforme = True
+        
         # Vérification 3 : Diamètre
+        diametre_non_conforme = False
         fp2e_map = {'A': 15, 'U': 15, 'V': 15, 'B': 20, 'C': 25, 'D': 30, 'E': 40, 'F': 50, 'G': [60, 65], 'H': 80, 'I': 100, 'J': 125, 'K': 150}
         expected_diametres = fp2e_map.get(lettre_diam, [])
         if not isinstance(expected_diametres, list):
             expected_diametres = [expected_diametres]
 
         if pd.isna(diametre_val) or diametre_val not in expected_diametres:
-            anomalies.append('Diamètre non conforme')
-
+            anomalies.append('Le diamètre n\'est pas conforme')
+            diametre_non_conforme = True
+        
+        # Si aucune des anomalies spécifiques n'a été déclenchée, mais que le format est bon, c'est que c'est une autre anomalie
+        if not anomalies and (not annee_non_conforme and not diametre_non_conforme):
+            # Le format est bon, mais pas l'année ou le diamètre, donc pas de nouvelle anomalie
+            pass
+        
     except (TypeError, ValueError, IndexError):
-        anomalies.append('Erreur de format interne')
+        anomalies.append('Le numéro de compteur n\'est pas conforme')
     
     if not anomalies:
         return 'Conforme'
@@ -170,10 +180,9 @@ def check_data(df):
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
 
     # ------------------------------------------------------------------
-    # LOGIQUE CORRIGÉE POUR LA NORME FP2E
+    # LOGIQUE POUR LA NORME FP2E
     # ------------------------------------------------------------------
     
-    # Condition pour appliquer la vérification FP2E
     fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
     
     sappel_non_manuelle = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
@@ -181,12 +190,14 @@ def check_data(df):
     
     fp2e_check_condition = sappel_non_manuelle | manuelle_format_ok
     
+    # Appliquer la vérification détaillée et fusionner les résultats
     fp2e_results = df_with_anomalies[fp2e_check_condition].apply(check_fp2e_details, axis=1)
     
-    # Mise à jour des colonnes d'anomalies
-    has_fp2e_anomalies = fp2e_results[fp2e_results != 'Conforme'].index
-    df_with_anomalies.loc[has_fp2e_anomalies, 'Anomalie Détaillée FP2E'] = fp2e_results[fp2e_results != 'Conforme']
-    df_with_anomalies.loc[has_fp2e_anomalies, 'Anomalie'] += 'non conforme FP2E / '
+    # Mettre à jour les colonnes d'anomalies avec les résultats détaillés FP2E
+    for index, anomaly_str in fp2e_results.items():
+        if anomaly_str != 'Conforme':
+            df_with_anomalies.loc[index, 'Anomalie'] += anomaly_str + ' / '
+            df_with_anomalies.loc[index, 'Anomalie Détaillée FP2E'] = anomaly_str
     
     # Nettoyage de la colonne 'Anomalie'
     df_with_anomalies['Anomalie'] = df_with_anomalies['Anomalie'].str.strip().str.rstrip(' /')
@@ -273,7 +284,9 @@ if uploaded_file is not None:
                 "SAPPEL: Incohérence Marque/Compteur (H)": ['Marque', 'Numéro de compteur'],
                 "SAPPEL: Année >22 & Tête ≠ DME": ['Année de fabrication', 'Numéro de tête'],
                 "SAPPEL: Année >22 & Protocole ≠ OMS": ['Année de fabrication', 'Protocole Radio'],
-                "non conforme FP2E": ['Numéro de compteur', 'Diametre', 'Année de fabrication'],
+                "Le numéro de compteur n'est pas conforme": ['Numéro de compteur'],
+                "Le diamètre n'est pas conforme": ['Diametre'],
+                "L'année de millésime n'est pas conforme": ['Année de fabrication']
             }
 
             if file_extension == 'csv':
@@ -307,28 +320,32 @@ if uploaded_file is not None:
                 for row_num_all, df_row in enumerate(anomalies_df.iterrows()):
                     anomalies = str(df_row[1]['Anomalie']).split(' / ')
                     
-                    if 'non conforme FP2E' in anomalies:
-                        # La colonne 'Anomalie Détaillée FP2E' peut contenir plusieurs anomalies séparées par ' / '
-                        fp2e_details = str(df_row[1]['Anomalie Détaillée FP2E']).split(' / ')
-                        columns_to_highlight = []
+                    # Logique de coloration basée sur la nouvelle logique FP2E
+                    if 'Le diamètre n\'est pas conforme' in anomalies:
+                        try:
+                            col_index = list(anomalies_df_display.columns).index('Diametre') + 1
+                            cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
+                            cell.fill = red_fill
+                        except ValueError:
+                            pass
+                    
+                    if 'L\'année de millésime n\'est pas conforme' in anomalies:
+                        try:
+                            col_index = list(anomalies_df_display.columns).index('Année de fabrication') + 1
+                            cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
+                            cell.fill = red_fill
+                        except ValueError:
+                            pass
+                            
+                    if 'Le numéro de compteur n\'est pas conforme' in anomalies:
+                        try:
+                            col_index = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
+                            cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
+                            cell.fill = red_fill
+                        except ValueError:
+                            pass
 
-                        if 'Année fabrication différente' in fp2e_details or 'Année fabrication manquante ou invalide' in fp2e_details:
-                            columns_to_highlight.append('Année de fabrication')
-                        if 'Diamètre non conforme' in fp2e_details:
-                            columns_to_highlight.append('Diametre')
-                        if 'Format de compteur non FP2E' in fp2e_details or 'Erreur de format interne' in fp2e_details:
-                            columns_to_highlight.append('Numéro de compteur')
-                        
-                        for col_name in columns_to_highlight:
-                            try:
-                                col_index = list(anomalies_df_display.columns).index(col_name) + 1
-                                cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
-                                cell.fill = red_fill
-                            except ValueError:
-                                pass
-                        
-                        anomalies.remove('non conforme FP2E')
-
+                    # Coloration pour les autres anomalies
                     for anomaly in anomalies:
                         anomaly_key = anomaly.strip()
                         if anomaly_key in anomaly_columns_map:
@@ -405,27 +422,32 @@ if uploaded_file is not None:
                     for row_num_detail, df_row in enumerate(filtered_df.iterrows()):
                         anomalies = str(df_row[1]['Anomalie']).split(' / ')
 
-                        if 'non conforme FP2E' in anomalies:
-                            fp2e_details = str(df_row[1]['Anomalie Détaillée FP2E']).split(' / ')
-                            columns_to_highlight = []
+                        # Logique de coloration basée sur la nouvelle logique FP2E
+                        if 'Le diamètre n\'est pas conforme' in anomalies:
+                            try:
+                                col_index = list(anomalies_df_display.columns).index('Diametre') + 1
+                                cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
+                                cell.fill = red_fill
+                            except ValueError:
+                                pass
+                        
+                        if 'L\'année de millésime n\'est pas conforme' in anomalies:
+                            try:
+                                col_index = list(anomalies_df_display.columns).index('Année de fabrication') + 1
+                                cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
+                                cell.fill = red_fill
+                            except ValueError:
+                                pass
+                                
+                        if 'Le numéro de compteur n\'est pas conforme' in anomalies:
+                            try:
+                                col_index = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
+                                cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
+                                cell.fill = red_fill
+                            except ValueError:
+                                pass
 
-                            if 'Année fabrication différente' in fp2e_details or 'Année fabrication manquante ou invalide' in fp2e_details:
-                                columns_to_highlight.append('Année de fabrication')
-                            if 'Diamètre non conforme' in fp2e_details:
-                                columns_to_highlight.append('Diametre')
-                            if 'Format de compteur non FP2E' in fp2e_details or 'Erreur de format interne' in fp2e_details:
-                                columns_to_highlight.append('Numéro de compteur')
-                            
-                            for col_name in columns_to_highlight:
-                                try:
-                                    col_index = list(anomalies_df_display.columns).index(col_name) + 1
-                                    cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
-                                    cell.fill = red_fill
-                                except ValueError:
-                                    pass
-                            
-                            anomalies.remove('non conforme FP2E')
-
+                        # Coloration pour les autres anomalies
                         for anomaly in anomalies:
                             anomaly_key = anomaly.strip()
                             if anomaly_key in anomaly_columns_map:
