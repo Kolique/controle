@@ -53,8 +53,7 @@ def check_fp2e_details(row):
         # Vérification 1 : Format du compteur
         fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
         if not re.match(fp2e_regex, compteur):
-            anomalies.append('Le numéro de compteur n\'est pas conforme')
-            return ' / '.join(anomalies)
+            return 'Conforme'
 
         annee_compteur = compteur[1:3]
         lettre_diam = compteur[4].upper()
@@ -172,7 +171,9 @@ def check_data(df):
     sappel_valid_tete_dme = is_sappel & (df_with_anomalies['Numéro de tête'].astype(str).str.upper().str.startswith('DME'))
     df_with_anomalies.loc[sappel_valid_tete_dme & (df_with_anomalies['Numéro de tête'].str.len() != 15), 'Anomalie'] += 'SAPPEL: Tête DME ≠ 15 caractères / '
     
-    df_with_anomalies.loc[is_sappel & (~df_with_anomalies['Numéro de compteur'].str.startswith(('C', 'H'))), 'Anomalie'] += 'SAPPEL: Compteur ne commence pas par C ou H / '
+    # Nouvelle logique: on applique la règle SAPPEL seulement si le mode n'est pas "Manuelle"
+    sappel_non_manuelle = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
+    df_with_anomalies.loc[sappel_non_manuelle & (~df_with_anomalies['Numéro de compteur'].str.startswith(('C', 'H'))), 'Anomalie'] += 'SAPPEL: Compteur ne commence pas par C ou H / '
     
     df_with_anomalies.loc[(is_sappel) & (df_with_anomalies['Numéro de compteur'].str.startswith('C')) & (df_with_anomalies['Marque'].str.upper() != 'SAPPEL (C)'), 'Anomalie'] += 'SAPPEL: Incohérence Marque/Compteur (C) / '
     
@@ -181,7 +182,9 @@ def check_data(df):
     df_with_anomalies.loc[is_sappel & (annee_fabrication_num > 22) & (df_with_anomalies['Protocole Radio'].str.upper() != 'OMS'), 'Anomalie'] += 'SAPPEL: Année >22 & Protocole ≠ OMS / '
 
     # ITRON
-    df_with_anomalies.loc[is_itron & (~df_with_anomalies['Numéro de compteur'].str.startswith(('I', 'D'))), 'Anomalie'] += 'ITRON: Compteur ne commence pas par I ou D / '
+    # Nouvelle logique: on applique la règle ITRON seulement si le mode n'est pas "Manuelle"
+    itron_non_manuelle = is_itron & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
+    df_with_anomalies.loc[itron_non_manuelle & (~df_with_anomalies['Numéro de compteur'].str.startswith(('I', 'D'))), 'Anomalie'] += 'ITRON: Compteur ne commence pas par I ou D / '
 
 
     # ------------------------------------------------------------------
@@ -190,18 +193,13 @@ def check_data(df):
     
     fp2e_regex = r'^[A-Z]\d{2}[A-Z]{2}\d{6}$'
     
-    # Condition : Mode de relève n'est pas "MANUELLE" ET la marque est "SAPPEL"
+    # Condition 1: La marque est SAPPEL ET le mode de relève n'est pas "MANUELLE"
     sappel_non_manuelle = is_sappel & (df_with_anomalies['Mode de relève'].str.upper() != 'MANUELLE')
     
-    # Condition : Mode de relève est "MANUELLE" ET le numéro de compteur respecte le format FP2E
+    # Condition 2: Le mode de relève est "MANUELLE" ET le numéro de compteur respecte le format FP2E
     manuelle_format_ok = (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & (df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False))
     
-    # Si mode de relève est "MANUELLE" mais le format ne correspond pas, on ajoute une anomalie spécifique
-    df_with_anomalies.loc[
-        (df_with_anomalies['Mode de relève'].str.upper() == 'MANUELLE') & (~df_with_anomalies['Numéro de compteur'].str.match(fp2e_regex, na=False)), 
-        'Anomalie'
-    ] += 'Manuel: Ne respecte pas le format FP2E / '
-    
+    # Les contrôles FP2E ne s'appliquent que si l'une des deux conditions est vraie
     fp2e_check_condition = sappel_non_manuelle | manuelle_format_ok
     
     # Appliquer la vérification détaillée et fusionner les résultats
@@ -302,7 +300,6 @@ if uploaded_file is not None:
                 "Le numéro de compteur n'est pas conforme": ['Numéro de compteur'],
                 "Le diamètre n'est pas conforme": ['Diametre'],
                 "L'année de millésime n'est pas conforme": ['Année de fabrication'],
-                "Manuel: Ne respecte pas le format FP2E": ['Numéro de compteur']
             }
 
             if file_extension == 'csv':
@@ -354,14 +351,6 @@ if uploaded_file is not None:
                             pass
                             
                     if 'Le numéro de compteur n\'est pas conforme' in anomalies:
-                        try:
-                            col_index = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
-                            cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
-                            cell.fill = red_fill
-                        except ValueError:
-                            pass
-                    
-                    if 'Manuel: Ne respecte pas le format FP2E' in anomalies:
                         try:
                             col_index = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
                             cell = ws_all_anomalies.cell(row=row_num_all + 2, column=col_index)
@@ -464,14 +453,6 @@ if uploaded_file is not None:
                                 pass
                                 
                         if 'Le numéro de compteur n\'est pas conforme' in anomalies:
-                            try:
-                                col_index = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
-                                cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
-                                cell.fill = red_fill
-                            except ValueError:
-                                pass
-                        
-                        if 'Manuel: Ne respecte pas le format FP2E' in anomalies:
                             try:
                                 col_index = list(anomalies_df_display.columns).index('Numéro de compteur') + 1
                                 cell = ws_anomaly_detail.cell(row=row_num_detail + 2, column=col_index)
